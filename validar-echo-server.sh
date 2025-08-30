@@ -13,7 +13,9 @@ RESPONSE=$(docker run --rm --network $NETWORK alpine sh -c \
 
 if [ "$RESPONSE" = "$MESSAGE" ]; then
   echo "action: test_echo_server | result: success"
+  exit 0
   
 else
   echo "action: test_echo_server | result: fail"
+  exit 1
 fi
