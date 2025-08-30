@@ -204,3 +204,34 @@ Consistió en usar volúmenes para inyectar los archivos de configuración en lo
 Mientras hacía el ejercicio me encontré con un problema: había dejado la variable de entorno referida al nivel de log definida en cada servicio del docker compose, y la misma tiene precedencia (cosa que no sabía) sobre los valores del archivo de configuración, lo que hacía que el nivel de logs se forzara a DEBUG en lugar de tomar el valor del archivo. 
 
 Eliminando esa variable de entorno, todos los tests pasaron.
+
+### Ejercicio 3
+
+Para correr, primero agregar permiso de ejecución sobre el script: 
+
+chmod +x validar-echo-server.sh
+
+Para ejecutar el script: 
+
+./validar-echo-server.sh
+
+Netcat es una herramienta de red que permite leer y escribir datos a través de conexiones TCP/UDP, nunca la había usado personalmente.
+
+El script `validar-echo-server.sh` hace lo siguiente:
+
+1. Usa un contenedor temporal: Ejecuta `docker run --rm --network tp0_testing_net alpine` para crear un contenedor que tenga acceso a la misma red que el servidor. El flag `--rm` hace que el contenedor se elimine automáticamente cuando termina su ejecución.
+
+2. Instala netcat: Dentro del contenedor Alpine, instala `netcat-openbsd` que es la implementación de netcat.
+
+3. Envía mensaje: Usa `echo "Vamos River" | nc -w 3 server 12345` para enviar un mensaje al servidor y esperar respuesta con timeout de 3 segundos.
+
+4. Valida respuesta: Compara si la respuesta recibida es igual al mensaje enviado.
+
+El script usa la red interna de Docker tp0_testing_net para acceder al servidor sin exponer puertos al host.
+
+Al principio no me andaba localmente cuando intentaba correr el script debido a que no tenía bien el nombre de la red de docker, pensaba que era testing_net y luego al usar el comando:
+
+docker network ls 
+1277207f9891   tp0_testing_net   bridge    local
+
+Vi que se le agrega el tp0 al principio debido a ese name:tp0 al principio del docker compose que define el nombre del proyecto.
