@@ -197,3 +197,10 @@ nombre_docker_compose.yaml será el archivo de salida.
 
 cantidad_de_clientes debe ser un número, el cual representa la cantidad configurable de clientes.
 
+### Ejercicio 2
+
+Consistió en usar volúmenes para inyectar los archivos de configuración en los contenedores, de modo que los cambios en dichos archivos se reflejen sin necesidad de buildear las imágenes.
+
+Mientras hacía el ejercicio me encontré con un problema: había dejado la variable de entorno referida al nivel de log definida en cada servicio del docker compose, y la misma tiene precedencia (cosa que no sabía) sobre los valores del archivo de configuración, lo que hacía que el nivel de logs se forzara a DEBUG en lugar de tomar el valor del archivo. 
+
+Eliminando esa variable de entorno, todos los tests pasaron.
