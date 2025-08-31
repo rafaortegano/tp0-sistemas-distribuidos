@@ -1,8 +1,6 @@
 package common
 
 import (
-	"encoding/binary"
-	"fmt"
 	"net"
 	"os"
 	"os/signal"
