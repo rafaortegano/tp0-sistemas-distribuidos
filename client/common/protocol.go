@@ -25,6 +25,8 @@ func SerializeBet(bet *Bet) ([]byte, error) {
 	
 	payloadBuf := new(bytes.Buffer)
 	
+	binary.Write(payloadBuf, binary.BigEndian, bet.AgenciaID)
+	
 	if err := writeString(payloadBuf, bet.Nombre); err != nil {
 		return nil, err
 	}

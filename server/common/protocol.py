@@ -6,7 +6,8 @@ STATUS_ERROR = 0x01
 
 
 class BetRequest:
-    def __init__(self, nombre, apellido, documento, nacimiento, numero):
+    def __init__(self, agencia_id, nombre, apellido, documento, nacimiento, numero):
+        self.agencia_id = agencia_id
         self.nombre = nombre
         self.apellido = apellido
         self.documento = documento
@@ -76,6 +77,11 @@ def parse_bet_request(data):
     payload = data[4:]
     offset = 0
     
+    if offset + 1 > len(payload):
+        raise ValueError("Unexpected end of data while reading agencia_id")
+    agencia_id = payload[offset]
+    offset += 1
+    
     nombre, offset = read_string(payload, offset)
     
     apellido, offset = read_string(payload, offset)
@@ -98,7 +104,7 @@ def parse_bet_request(data):
         raise ValueError("Unexpected end of data while reading numero")
     numero = struct.unpack('>H', payload[offset:offset + 2])[0]
     
-    return BetRequest(nombre, apellido, documento, nacimiento, numero)
+    return BetRequest(agencia_id, nombre, apellido, documento, nacimiento, numero)
 
 def receive_message(socket):
     """Receive and parse a complete message from socket"""
