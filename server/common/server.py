@@ -1,5 +1,6 @@
 import socket
 import logging
+import signal
 
 
 class Server:
@@ -8,6 +9,9 @@ class Server:
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
+        self._running = True
+        
+        signal.signal(signal.SIGTERM, self._signal_handler)
 
     def run(self):
         """
@@ -18,11 +22,18 @@ class Server:
         finishes, servers starts to accept new connections again
         """
 
-        # TODO: Modify this program to handle signal to graceful shutdown
-        # the server
-        while True:
-            client_sock = self.__accept_new_connection()
-            self.__handle_client_connection(client_sock)
+        try:
+            while self._running:
+                try:
+                    client_sock = self.__accept_new_connection()
+                    if client_sock:
+                        self.__handle_client_connection(client_sock)
+                except socket.error as e:
+                    if self._running:
+                        logging.error(f"action: accept_connection | result: fail | error: {e}")
+                    break
+        finally:
+            self._cleanup()
 
     def __handle_client_connection(self, client_sock):
         """
@@ -50,9 +61,31 @@ class Server:
         Function blocks until a connection to a client is made.
         Then connection created is printed and returned
         """
-
-        # Connection arrived
-        logging.info('action: accept_connections | result: in_progress')
-        c, addr = self._server_socket.accept()
-        logging.info(f'action: accept_connections | result: success | ip: {addr[0]}')
-        return c
+        try:
+            logging.info('action: accept_connections | result: in_progress')
+            c, addr = self._server_socket.accept()
+            logging.info(f'action: accept_connections | result: success | ip: {addr[0]}')
+            return c
+        except socket.error as e:
+            if self._running:
+                logging.error(f'action: accept_connections | result: fail | error: {e}')
+            return None
+    
+    def _signal_handler(self, sig, frame):
+        """Handles SIGTERM signal for graceful shutdown"""
+        logging.info('action: signal_received | result: success | signal: SIGTERM')
+        self._running = False
+        
+        if self._server_socket:
+            self._server_socket.close()
+    
+    def _cleanup(self):
+        """Cleans up resources during shutdown"""
+        logging.info('action: shutdown_server | result: in_progress')
+        if hasattr(self, '_server_socket') and self._server_socket:
+            try:
+                self._server_socket.close()
+                logging.info('action: close_server_socket | result: success')
+            except:
+                pass
+        logging.info('action: shutdown_server | result: success')
