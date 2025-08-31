@@ -1,6 +1,8 @@
 import socket
 import logging
 import signal
+from common.protocol import receive_message, send_bet_response, STATUS_OK, STATUS_ERROR
+from common.utils import store_bets, Bet as UtilsBet
 
 
 class Server:
@@ -37,20 +39,36 @@ class Server:
 
     def __handle_client_connection(self, client_sock):
         """
-        Read message from a specific client socket and closes the socket
-
+        Read message from a specific client socket and closes the socket   
         If a problem arises in the communication with the client, the
         client socket will also be closed
         """
         try:
-            # TODO: Modify the receive to avoid short-reads
-            msg = client_sock.recv(1024).rstrip().decode('utf-8')
-            addr = client_sock.getpeername()
-            logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')
-            # TODO: Modify the send to avoid short-writes
-            client_sock.send("{}\n".format(msg).encode('utf-8'))
+            bet_request = receive_message(client_sock)
+            
+            year = bet_request.nacimiento // 10000
+            month = (bet_request.nacimiento // 100) % 100  
+            day = bet_request.nacimiento % 100
+            
+            utils_bet = UtilsBet(
+                agency=str(bet_request.agencia_id), 
+                first_name=bet_request.nombre,
+                last_name=bet_request.apellido,
+                document=str(bet_request.documento),
+                birthdate=f"{year:04d}-{month:02d}-{day:02d}",
+                number=str(bet_request.numero)
+            )
+            
+
+            store_bets([utils_bet])
+            
+            logging.info(f'action: apuesta_almacenada | result: success | dni: {bet_request.documento} | numero: {bet_request.numero}')
+            
+            send_bet_response(client_sock, STATUS_OK, "Apuesta registrada exitosamente")
+                
         except OSError as e:
-            logging.error("action: receive_message | result: fail | error: {e}")
+            logging.error("action: handle_client | result: fail | error: {e}")
+            send_bet_response(client_sock, STATUS_ERROR, "Error al procesar apuesta")
         finally:
             client_sock.close()
 
