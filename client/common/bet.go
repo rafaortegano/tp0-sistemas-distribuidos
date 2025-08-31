@@ -31,19 +31,19 @@ func NewBetFromEnv() (*Bet, error) {
 	}
 	bet.AgenciaID = uint8(cliID)
 	
-	bet.Nombre = os.Getenv("NOMBRE")
+		bet.Nombre = os.Getenv("CLI_NOMBRE")
 	if bet.Nombre == "" {
-		return nil, fmt.Errorf("NOMBRE environment variable is required")
-	}
-	
-	bet.Apellido = os.Getenv("APELLIDO")
-	if bet.Apellido == "" {
-		return nil, fmt.Errorf("APELLIDO environment variable is required")
+		return nil, fmt.Errorf("CLI_NOMBRE environment variable is required")
 	}
 
-	documentoStr := os.Getenv("DOCUMENTO")
+	bet.Apellido = os.Getenv("CLI_APELLIDO")
+	if bet.Apellido == "" {
+		return nil, fmt.Errorf("CLI_APELLIDO environment variable is required")
+	}
+
+	documentoStr := os.Getenv("CLI_DOCUMENTO")
 	if documentoStr == "" {
-		return nil, fmt.Errorf("DOCUMENTO environment variable is required")
+		return nil, fmt.Errorf("CLI_DOCUMENTO environment variable is required")
 	}
 	documento, err := strconv.ParseUint(documentoStr, 10, 32)
 	if err != nil {
@@ -51,9 +51,9 @@ func NewBetFromEnv() (*Bet, error) {
 	}
 	bet.Documento = uint32(documento)
 	
-	nacimientoStr := os.Getenv("NACIMIENTO")
+	nacimientoStr := os.Getenv("CLI_NACIMIENTO")
 	if nacimientoStr == "" {
-		return nil, fmt.Errorf("NACIMIENTO environment variable is required")
+		return nil, fmt.Errorf("CLI_NACIMIENTO environment variable is required")
 	}
 
 	nacimientoFormatted := strings.ReplaceAll(nacimientoStr, "-", "")
@@ -64,9 +64,9 @@ func NewBetFromEnv() (*Bet, error) {
 	bet.Nacimiento = uint32(nacimiento)
 	
 
-	numeroStr := os.Getenv("NUMERO")
+	numeroStr := os.Getenv("CLI_NUMERO")
 	if numeroStr == "" {
-		return nil, fmt.Errorf("NUMERO environment variable is required")
+		return nil, fmt.Errorf("CLI_NUMERO environment variable is required")
 	}
 	numero, err := strconv.ParseUint(numeroStr, 10, 32)
 	if err != nil {
