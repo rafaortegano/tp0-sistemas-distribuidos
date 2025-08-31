@@ -235,3 +235,31 @@ docker network ls
 1277207f9891   tp0_testing_net   bridge    local
 
 Vi que se le agrega el tp0 al principio debido a ese name:tp0 al principio del docker compose que define el nombre del proyecto.
+
+### Ejercicio 4
+
+Consistió en implementar graceful shutdown tanto en el servidor como en el cliente para manejar correctamente la señal SIGTERM enviada por Docker.
+
+#### Servidor
+
+Se realizó lo siguiente:
+
+1. Signal Handler: Manejo de la señal SIGTERM usando el módulo `signal` de Python. Cuando llega la señal, se cambia el estado del servidor (`self._running = False`) y se cierra el socket para interrumpir operaciones bloqueantes.
+
+2. Loop Infinito: Se cambió el loop infinito `while True` por `while self._running`.
+
+3. Manejo de Excepciones: Se agregó `try/except` en `accept()` para capturar errores cuando el socket se cierra durante el shutdown.
+
+4. Cleanup: Se usó `try/finally` para asegurar que `_cleanup()` siempre se ejecute, pudiendo así loguear el cierre de recursos.
+
+#### Cliente
+
+Se realizó lo siguiente:
+
+1. Signal Handler: Se usó `signal.Notify()` para capturar SIGTERM en una goroutine separada que se comunica con el loop principal a través de channels.
+
+2. Channel de Comunicación: Se agregó `shutdownChan chan bool` al struct del cliente para comunicación segura entre goroutines (signal handler y loop principal).
+
+3. Loop Interrumpible: Se modificó el loop principal y el `time.Sleep()` usando `select` statements para permitir terminación inmediata al recibir la señal.
+
+4. Cleanup: Se usó `defer c.cleanup()` para garantizar el cierre de conexiones y logging apropiado.
