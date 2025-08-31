@@ -4,6 +4,9 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/op/go-logging"
@@ -23,6 +26,7 @@ type ClientConfig struct {
 type Client struct {
 	config ClientConfig
 	conn   net.Conn
+	shutdownChan chan bool
 }
 
 // NewClient Initializes a new client receiving the configuration
@@ -30,7 +34,11 @@ type Client struct {
 func NewClient(config ClientConfig) *Client {
 	client := &Client{
 		config: config,
+		shutdownChan: make(chan bool, 1),
 	}
+
+	client.setupSignalHandler()
+	
 	return client
 }
 
@@ -52,11 +60,21 @@ func (c *Client) createClientSocket() error {
 
 // StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop() {
+	defer c.cleanup()
+	
 	// There is an autoincremental msgID to identify every message sent
 	// Messages if the message amount threshold has not been surpassed
 	for msgID := 1; msgID <= c.config.LoopAmount; msgID++ {
-		// Create the connection the server in every loop iteration. Send an
-		c.createClientSocket()
+		select {
+		case <-c.shutdownChan:
+			log.Infof("action: shutdown_requested | result: success | client_id: %v", c.config.ID)
+			return
+		default:
+		}
+		
+		if err := c.createClientSocket(); err != nil {
+			return
+		}
 
 		// TODO: Modify the send to avoid short-write
 		fmt.Fprintf(
@@ -65,6 +83,7 @@ func (c *Client) StartClientLoop() {
 			c.config.ID,
 			msgID,
 		)
+		
 		msg, err := bufio.NewReader(c.conn).ReadString('\n')
 		c.conn.Close()
 
@@ -81,9 +100,40 @@ func (c *Client) StartClientLoop() {
 			msg,
 		)
 
-		// Wait a time between sending one message and the next one
-		time.Sleep(c.config.LoopPeriod)
-
+		select {
+		case <-c.shutdownChan:
+			log.Infof("action: shutdown_requested | result: success | client_id: %v", c.config.ID)
+			return
+		case <-time.After(c.config.LoopPeriod):
+		}
 	}
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
+}
+
+// setupSignalHandler configures signal handling for graceful shutdown
+func (c *Client) setupSignalHandler() {
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, syscall.SIGTERM, syscall.SIGINT)
+	
+	go func() {
+		sig := <-signalChan
+		log.Infof("action: signal_received | result: success | client_id: %v | signal: %v", c.config.ID, sig)
+		
+		select {
+		case c.shutdownChan <- true:
+		default:
+		}
+	}()
+}
+
+// cleanup closes connection and logs shutdown
+func (c *Client) cleanup() {
+	log.Infof("action: client_shutdown | result: in_progress | client_id: %v", c.config.ID)
+	
+	if c.conn != nil {
+		c.conn.Close()
+		log.Infof("action: close_connection | result: success | client_id: %v", c.config.ID)
+	}
+	
+	log.Infof("action: client_shutdown | result: success | client_id: %v", c.config.ID)
 }
