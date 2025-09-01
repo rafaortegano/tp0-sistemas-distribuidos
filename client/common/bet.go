@@ -9,7 +9,6 @@ import (
 
 // Bet structure that represents a bet
 type Bet struct {
-	AgenciaID  uint8
 	Nombre     string
 	Apellido   string
 	Documento  uint32
@@ -21,17 +20,8 @@ type Bet struct {
 func NewBetFromEnv() (*Bet, error) {
 	bet := &Bet{}
 	
-	cliIDStr := os.Getenv("CLI_ID")
-	if cliIDStr == "" {
-		return nil, fmt.Errorf("CLI_ID environment variable is required")
-	}
-	cliID, err := strconv.ParseUint(cliIDStr, 10, 8)
-	if err != nil {
-		return nil, fmt.Errorf("invalid CLI_ID: %v", err)
-	}
-	bet.AgenciaID = uint8(cliID)
-	
-		bet.Nombre = os.Getenv("CLI_NOMBRE")
+
+	bet.Nombre = os.Getenv("CLI_NOMBRE")
 	if bet.Nombre == "" {
 		return nil, fmt.Errorf("CLI_NOMBRE environment variable is required")
 	}
@@ -79,10 +69,6 @@ func NewBetFromEnv() (*Bet, error) {
 
 // Validate checks if the bet data is valid
 func (b *Bet) Validate() error {
-	if b.AgenciaID == 0 || b.AgenciaID > 5 {
-		return fmt.Errorf("agencia_id must be between 1-5")
-	}
-	
 	if len(b.Nombre) == 0 || len(b.Nombre) > 255 {
 		return fmt.Errorf("nombre must be 1-255 characters")
 	}
