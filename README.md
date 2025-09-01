@@ -263,3 +263,51 @@ Se realizó lo siguiente:
 3. Loop Interrumpible: Se modificó el loop principal y el `time.Sleep()` usando `select` statements para permitir terminación inmediata al recibir la señal.
 
 4. Cleanup: Se usó `defer c.cleanup()` para garantizar el cierre de conexiones y logging apropiado.
+
+### Ejercicio 5
+
+Implementación de un sistema de lotería nacional con protocolo binario para el envío de apuestas desde distintas agencias al servidor.
+
+#### Protocolo Binario
+
+Se diseñó un protocolo binario con mensajes de tamaño pre fijado:
+
+Estructura del mensaje:
+```
+[4 bytes: longitud] + [payload]
+```
+
+Payload de apuesta:
+```
+[1 byte: agencia_id (1-5)] + 
+[1 byte: len_nombre (0-255)][nombre_datos (máx 255 chars)] + 
+[1 byte: len_apellido (0-255)][apellido_datos (máx 255 chars)] + 
+[4 bytes: documento (uint32)] + 
+[2 bytes: año (uint16)][1 byte: mes (1-12)][1 byte: día (1-31)] + 
+[2 bytes: número de apuesta (uint16)]
+```
+
+
+Especificaciones técnicas:
+* agencia_id: 1 byte (capacidad: 0-255, ejercicio: 1-5)
+* len_nombre: 1 byte (rango: 0-255, indica bytes del nombre)
+* nombre_datos: Variable (máximo 255 bytes UTF-8)
+* len_apellido: 1 byte (rango: 0-255, indica bytes del apellido)
+* apellido_datos: Variable (máximo 255 bytes UTF-8)
+* documento: 4 bytes unsigned integer (big-endian)
+* año: 2 bytes unsigned integer (big-endian, ej: 1999)
+* mes: 1 byte (rango: 1-12)
+* día: 1 byte (rango: 1-31)
+* numero: 2 bytes unsigned integer (big-endian)
+
+
+
+Cliente:
+* bet.go: Lógica de negocio (validación de apuestas, lectura de configuración)
+* protocol.go: Protocolo binario (serialización de apuestas, deserialización de respuestas, manejo de short reads/writes)  
+* client.go: Lógica de aplicación
+
+Servidor:
+* protocol.py: Protocolo binario (deserialización de apuestas, serialización de respuestas, manejo de short reads/writes)
+* server.py: Lógica de aplicación
+
