@@ -17,6 +17,44 @@ type BetResponse struct {
 	Message string
 }
 
+// SerializeBatch serializes a batch of bets to binary
+func SerializeBatch(batch *Batch) ([]byte, error) {
+	payloadBuf := new(bytes.Buffer)
+	
+	binary.Write(payloadBuf, binary.BigEndian, batch.AgenciaID)
+	
+	binary.Write(payloadBuf, binary.BigEndian, uint16(len(batch.Apuestas)))
+
+	for _, bet := range batch.Apuestas {
+		if err := bet.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid bet in batch: %v", err)
+		}
+		
+		if err := writeString(payloadBuf, bet.Nombre); err != nil {
+			return nil, err
+		}
+		 
+		if err := writeString(payloadBuf, bet.Apellido); err != nil {
+			return nil, err
+		}
+		
+		binary.Write(payloadBuf, binary.BigEndian, bet.Documento)
+		
+		binary.Write(payloadBuf, binary.BigEndian, uint16(bet.Nacimiento/10000)) 
+		binary.Write(payloadBuf, binary.BigEndian, uint8((bet.Nacimiento/100)%100)) 
+		binary.Write(payloadBuf, binary.BigEndian, uint8(bet.Nacimiento%100)) 
+		
+		binary.Write(payloadBuf, binary.BigEndian, uint16(bet.Numero))
+	}
+	
+	payload := payloadBuf.Bytes()
+	finalBuf := new(bytes.Buffer)
+	binary.Write(finalBuf, binary.BigEndian, uint32(len(payload)))
+	finalBuf.Write(payload)
+	
+	return finalBuf.Bytes(), nil
+}
+
 // SerializeBet serializes a bet to binary format with length prefix
 func SerializeBet(bet *Bet) ([]byte, error) {
 	if err := bet.Validate(); err != nil {
@@ -24,8 +62,6 @@ func SerializeBet(bet *Bet) ([]byte, error) {
 	}
 	
 	payloadBuf := new(bytes.Buffer)
-	
-	binary.Write(payloadBuf, binary.BigEndian, bet.AgenciaID)
 	
 	if err := writeString(payloadBuf, bet.Nombre); err != nil {
 		return nil, err
@@ -146,4 +182,13 @@ func sendAll(writer io.Writer, data []byte) error {
 	return nil
 }
 
+// SendBatch sends a batch of bets to the server
+func SendBatch(writer io.Writer, batch *Batch) error {
+	data, err := SerializeBatch(batch)
+	if err != nil {
+		return fmt.Errorf("failed to serialize batch: %v", err)
+	}
+	
+	return sendAll(writer, data)
+}
 
