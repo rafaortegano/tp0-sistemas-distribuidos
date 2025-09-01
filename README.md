@@ -311,3 +311,86 @@ Servidor:
 * protocol.py: Protocolo binario (deserialización de apuestas, serialización de respuestas, manejo de short reads/writes)
 * server.py: Lógica de aplicación
 
+### Ejercicio 6
+
+Implementación de procesamiento de apuestas por batches. Los clientes ahora leen apuestas desde archivos CSV y las envían en batches al servidor.
+
+#### Protocolo Binario
+
+Estructura del mensaje de batch:
+```
+[4 bytes: longitud_total] + [payload_batch]
+```
+
+Payload de batch:
+```
+[1 byte: agencia_id (1-5)] + 
+[2 bytes: cantidad_apuestas] + 
+[apuesta1_datos] + [apuesta2_datos] + ... + [apuestaN_datos]
+```
+
+Cada apuesta_datos mantiene la estructura del ejercicio 5 pero sin el agencia_id (que ahora está a nivel batch):
+```
+[1 byte: len_nombre][nombre_datos] + 
+[1 byte: len_apellido][apellido_datos] + 
+[4 bytes: documento] + 
+[4 bytes: nacimiento YYYYMMDD] + 
+[2 bytes: número]
+```
+
+#### Implementación
+
+
+Cliente:
+* batch.go: Definición del struct Batch
+* csv.go: Lectura y parseo de archivos CSV
+
+* client.go: Creación de batches respetando límites
+* protocol.go: Serialización de batches 
+* bet.go: AgenciaID movido a nivel batch
+
+Servidor:
+* protocol.py: Deserialización de batches
+
+
+#### Decisiones tomadas para los batch
+
+Límites aplicados:
+1. Por cantidad: `batch.maxAmount` del config.yaml
+2. Por tamaño: 8KB máximo por batch
+
+Criterios de estimación:
+- Tamaño fijo por apuesta: 12 bytes (nombreLen:1 + apellidoLen:1 + documento:4 + nacimiento:4 + numero:2)
+- Tamaño variable: longitud real de strings nombre + apellido
+- Estimación pre-serialización: `betFixedFieldsSize + len(nombre) + len(apellido)` 
+- Margen de seguridad: 512 bytes reservados del límite 8KB (tamaño máximo de una apuesta)
+- Límite efectivo: 7680 bytes (8192 - 512)
+- Se crea nuevo batch al alcanzar límite de cantidad o límite de tamaño
+
+La estimación es exacta porque Go usa 1 byte por carácter ASCII, la razón por la cual aparece esta idea en el ejercicio es porque se arma el batch antes de serializarlo.
+
+Principalmente para evitar problemas con los tamaños y límites, ahorrando así posibles rollbacks, decidí hacerlo de esta manera, que en este caso es útil porque ya se sabe cuando bytes va a ocupar la apuesta.
+
+#### Configuración
+
+**Docker volúmenes:** `./.data:/data` para inyectar archivos CSV
+
+#### Logging
+
+**Cliente:**
+
+action: read_csv | result: partial | client_id: {ID} | valid_bets: {N} | skipped_bets: {M}  (DEBUG level, solo si hay descartadas)
+
+action: batch_enviado | result: success | client_id: {ID} | batch_id: {N} | cantidad: {X}
+
+
+Servidor:
+
+action: apuesta_recibida | result: success | cantidad: {X}
+
+
+#### Cambios de Validación
+
+Se permiten valores 0 en documento y número (no me andaban los tests). 
+
+
