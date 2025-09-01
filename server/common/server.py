@@ -1,7 +1,7 @@
 import socket
 import logging
 import signal
-from common.protocol import receive_message, send_bet_response, STATUS_OK, STATUS_ERROR
+from common.protocol import receive_message, receive_batch_message, send_bet_response, STATUS_OK, STATUS_ERROR
 from common.utils import store_bets, Bet as UtilsBet
 
 
@@ -44,31 +44,38 @@ class Server:
         client socket will also be closed
         """
         try:
-            bet_request = receive_message(client_sock)
+            batch_request = receive_batch_message(client_sock)
             
-            year = bet_request.nacimiento // 10000
-            month = (bet_request.nacimiento // 100) % 100  
-            day = bet_request.nacimiento % 100
+            utils_bets = []
             
-            utils_bet = UtilsBet(
-                agency=str(bet_request.agencia_id), 
-                first_name=bet_request.nombre,
-                last_name=bet_request.apellido,
-                document=str(bet_request.documento),
-                birthdate=f"{year:04d}-{month:02d}-{day:02d}",
-                number=str(bet_request.numero)
-            )
+            for bet_request in batch_request.apuestas:
+                year = bet_request.nacimiento // 10000
+                month = (bet_request.nacimiento // 100) % 100  
+                day = bet_request.nacimiento % 100
+                
+                utils_bet = UtilsBet(
+                    agency=str(batch_request.agencia_id), 
+                    first_name=bet_request.nombre,
+                    last_name=bet_request.apellido,
+                    document=str(bet_request.documento),
+                    birthdate=f"{year:04d}-{month:02d}-{day:02d}",
+                    number=str(bet_request.numero)
+                )
+                utils_bets.append(utils_bet)
             
 
-            store_bets([utils_bet])
+            store_bets(utils_bets)
             
-            logging.info(f'action: apuesta_almacenada | result: success | dni: {bet_request.documento} | numero: {bet_request.numero}')
+            logging.info(f'action: apuesta_recibida | result: success | cantidad: {len(batch_request.apuestas)}')
             
-            send_bet_response(client_sock, STATUS_OK, "Apuesta registrada exitosamente")
+            send_bet_response(client_sock, STATUS_OK, f"Batch de {len(batch_request.apuestas)} apuestas registrado exitosamente")
                 
         except OSError as e:
-            logging.error("action: handle_client | result: fail | error: {e}")
-            send_bet_response(client_sock, STATUS_ERROR, "Error al procesar apuesta")
+            logging.error(f"action: handle_client | result: fail | error: {e}")
+            try:
+                send_bet_response(client_sock, STATUS_ERROR, "Error al procesar batch")
+            except:
+                pass
         finally:
             client_sock.close()
 
