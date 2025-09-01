@@ -41,6 +41,7 @@ services:
       - server
     volumes:
       - ./client/config.yaml:/config.yaml
+      - ./.data:/data
 """)
 
     f.write("""
