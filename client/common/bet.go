@@ -77,9 +77,7 @@ func (b *Bet) Validate() error {
 		return fmt.Errorf("apellido must be 1-255 characters")
 	}
 	
-	if b.Documento == 0 {
-		return fmt.Errorf("documento must be greater than 0")
-	}
+
 	
 
 	if b.Nacimiento < 19000101 || b.Nacimiento > 20251231 {
@@ -87,9 +85,7 @@ func (b *Bet) Validate() error {
 	}
 	
 
-	if b.Numero == 0 {
-		return fmt.Errorf("numero must be greater than 0")
-	}
+
 	
 	return nil
 }
