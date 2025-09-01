@@ -1,9 +1,11 @@
 package common
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -12,12 +14,23 @@ import (
 
 var log = logging.MustGetLogger("log")
 
+
+const (
+	maxBatchSizeBytes    = 8192
+	maxBetSizeBytes      = 512
+	safetyMargin         = maxBetSizeBytes
+	maxSafeBatchSize     = maxBatchSizeBytes - safetyMargin
+	batchHeaderSize      = 4 + 1 + 2 // length(4) + agenciaID(1) + bet_count(2)
+	betFixedFieldsSize   = 1 + 1 + 4 + 4 + 2 // nombreLen(1) + apellidoLen(1) + documento(4) + nacimiento(4) + numero(2)
+)
+
 // ClientConfig Configuration used by the client
 type ClientConfig struct {
 	ID            string
 	ServerAddress string
 	LoopAmount    int
 	LoopPeriod    time.Duration
+	BatchMaxAmount int
 }
 
 // Client Entity that encapsulates how
@@ -60,16 +73,43 @@ func (c *Client) createClientSocket() error {
 func (c *Client) StartClientLoop() {
 	defer c.cleanup()
 	
-	bet, err := NewBetFromEnv()
+	cliIDStr := os.Getenv("CLI_ID")
+	if cliIDStr == "" {
+		log.Errorf("action: read_agency_id | result: fail | client_id: %v | error: CLI_ID environment variable is required", 
+			c.config.ID)
+		return
+	}
+	agenciaID, err := strconv.ParseUint(cliIDStr, 10, 8)
 	if err != nil {
-		log.Errorf("action: read_bet_env | result: fail | client_id: %v | error: %v", 
+		log.Errorf("action: parse_agency_id | result: fail | client_id: %v | error: %v", 
 			c.config.ID, err)
 		return
 	}
-
-	// There is an autoincremental msgID to identify every message sent
-	// Messages if the message amount threshold has not been surpassed
-	for msgID := 1; msgID <= c.config.LoopAmount; msgID++ {
+	
+	filename := fmt.Sprintf("/data/dataset/agency-%s.csv", c.config.ID)
+	bets, skippedCount, err := ReadBetsFromCSV(filename, uint8(agenciaID))
+	if err != nil {
+		log.Errorf("action: read_csv | result: fail | client_id: %v | file: %s | error: %v", 
+			c.config.ID, filename, err)
+		return
+	}
+	
+	if skippedCount > 0 {
+		log.Debugf("action: read_csv | result: partial | client_id: %v | valid_bets: %d | skipped_bets: %d", 
+			c.config.ID, len(bets), skippedCount)
+	}
+	
+	if len(bets) == 0 {
+		log.Infof("action: read_csv | result: success | client_id: %v | total_bets: 0", c.config.ID)
+		return
+	}
+	
+	batches := c.createBatches(bets, uint8(agenciaID))
+	
+	// There is an autoincremental batchID to identify every batch sent  
+	// Send batches if the batch amount threshold has not been surpassed
+	batchesSent := 0
+	for batchID := 1; batchID <= c.config.LoopAmount && batchesSent < len(batches); batchID++ {
 		select {
 		case <-c.shutdownChan:
 			log.Infof("action: shutdown_requested | result: success | client_id: %v", c.config.ID)
@@ -77,21 +117,23 @@ func (c *Client) StartClientLoop() {
 		default:
 		}
 		
+		batch := batches[batchesSent]
+		
 		if err := c.createClientSocket(); err != nil {
 			return
 		}
 
-		if err := c.sendBet(bet); err != nil {
-			log.Errorf("action: enviar_apuesta | result: fail | client_id: %v | error: %v", 
-				c.config.ID, err)
+		if err := c.sendBatch(&batch); err != nil {
+			log.Errorf("action: enviar_batch | result: fail | client_id: %v | batch_id: %d | error: %v", 
+				c.config.ID, batchID, err)
 			c.conn.Close()
 			return
 		}
 		
 		response, err := c.receiveResponse()
 		if err != nil {
-			log.Errorf("action: receive_response | result: fail | client_id: %v | error: %v",
-				c.config.ID, err)
+			log.Errorf("action: receive_response | result: fail | client_id: %v | batch_id: %d | error: %v",
+				c.config.ID, batchID, err)
 			c.conn.Close()
 			return
 		}
@@ -99,12 +141,14 @@ func (c *Client) StartClientLoop() {
 		c.conn.Close()
 		
 		if response.Status == STATUS_OK {
-			log.Infof("action: apuesta_enviada | result: success | dni: %d | numero: %d",
-				bet.Documento, bet.Numero)
+			log.Infof("action: batch_enviado | result: success | client_id: %v | batch_id: %d | cantidad: %d",
+				c.config.ID, batchID, len(batch.Apuestas))
 		} else {
-			log.Errorf("action: apuesta_enviada | result: fail | dni: %d | numero: %d | error: %s",
-				bet.Documento, bet.Numero, response.Message)
+			log.Errorf("action: batch_enviado | result: fail | client_id: %v | batch_id: %d | cantidad: %d | error: %s",
+				c.config.ID, batchID, len(batch.Apuestas), response.Message)
 		}
+		
+		batchesSent++
 		
 		select {
 		case <-c.shutdownChan:
@@ -113,7 +157,7 @@ func (c *Client) StartClientLoop() {
 		case <-time.After(c.config.LoopPeriod):
 		}
 	}
-	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
+	log.Infof("action: loop_finished | result: success | client_id: %v | batches_sent: %d", c.config.ID, batchesSent)
 }
 
 // setupSignalHandler configures signal handling for graceful shutdown
@@ -140,6 +184,48 @@ func (c *Client) sendBet(bet *Bet) error {
 // receiveResponse receives and parses the server response
 func (c *Client) receiveResponse() (*BetResponse, error) {
 	return ReceiveResponse(c.conn)
+}
+
+// sendBatch sends a batch of bets to the server
+func (c *Client) sendBatch(batch *Batch) error {
+	return SendBatch(c.conn, batch)
+}
+
+// createBatches splits bets into batches respecting maxAmount and 8KB size limit
+func (c *Client) createBatches(bets []Bet, agenciaID uint8) []Batch {
+	var batches []Batch
+	maxAmount := c.config.BatchMaxAmount
+	
+	currentBatch := Batch{AgenciaID: agenciaID, Apuestas: make([]Bet, 0)}
+	currentSizeBytes := batchHeaderSize
+	
+	for _, bet := range bets {
+		if len(currentBatch.Apuestas) >= maxAmount {
+			if len(currentBatch.Apuestas) > 0 {
+				batches = append(batches, currentBatch)
+			}
+			currentBatch = Batch{AgenciaID: agenciaID, Apuestas: make([]Bet, 0)}
+			currentSizeBytes = batchHeaderSize
+		}
+		
+		estimatedBetSize := betFixedFieldsSize + len(bet.Nombre) + len(bet.Apellido)
+		if currentSizeBytes + estimatedBetSize > maxSafeBatchSize {
+			if len(currentBatch.Apuestas) > 0 {
+				batches = append(batches, currentBatch)
+			}
+			currentBatch = Batch{AgenciaID: agenciaID, Apuestas: make([]Bet, 0)}
+			currentSizeBytes = batchHeaderSize
+		}
+		
+		currentBatch.Apuestas = append(currentBatch.Apuestas, bet)
+		currentSizeBytes += estimatedBetSize
+	}
+	
+	if len(currentBatch.Apuestas) > 0 {
+		batches = append(batches, currentBatch)
+	}
+	
+	return batches
 }
 
 // cleanup closes connection and logs shutdown
