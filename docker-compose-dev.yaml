@@ -28,6 +28,7 @@ services:
       - server
     volumes:
       - ./client/config.yaml:/config.yaml
+      - ./.data:/data
 
 networks:
   testing_net:
