@@ -86,7 +86,7 @@ func (c *Client) StartClientLoop() {
 		return
 	}
 	
-	filename := fmt.Sprintf("/data/dataset/agency-%s.csv", c.config.ID)
+	filename := fmt.Sprintf("/data/agency-%s.csv", c.config.ID)
 	bets, skippedCount, err := ReadBetsFromCSV(filename, uint8(agenciaID))
 	if err != nil {
 		log.Errorf("action: read_csv | result: fail | client_id: %v | file: %s | error: %v", 
@@ -106,6 +106,7 @@ func (c *Client) StartClientLoop() {
 	
 	batches := c.createBatches(bets, uint8(agenciaID))
 	
+	
 	// There is an autoincremental batchID to identify every batch sent  
 	// Send batches if the batch amount threshold has not been surpassed
 	batchesSent := 0
@@ -118,6 +119,7 @@ func (c *Client) StartClientLoop() {
 		}
 		
 		batch := batches[batchesSent]
+		
 		
 		if err := c.createClientSocket(); err != nil {
 			return
