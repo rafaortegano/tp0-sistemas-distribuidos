@@ -17,6 +17,14 @@ class BetRequest:
     def __str__(self):
         return f"Bet({self.nombre} {self.apellido}, DOC:{self.documento}, NUM:{self.numero})"
 
+class BatchRequest:
+    def __init__(self, agencia_id, apuestas):
+        self.agencia_id = agencia_id
+        self.apuestas = apuestas 
+    
+    def __str__(self):
+        return f"Batch(agency={self.agencia_id}, bets={len(self.apuestas)})"
+
 class BetResponse:
     def __init__(self, status, message=""):
         self.status = status
@@ -106,6 +114,62 @@ def parse_bet_request(data):
     
     return BetRequest(agencia_id, nombre, apellido, documento, nacimiento, numero)
 
+def parse_batch_request(data):
+    """Parse binary data into a BatchRequest object"""
+    if len(data) < 4:
+        raise ValueError("Message too short for batch")
+    
+    msg_length = struct.unpack('>I', data[:4])[0]
+    
+    if len(data) != 4 + msg_length:
+        raise ValueError(f"Message length mismatch: expected {4 + msg_length}, got {len(data)}")
+    
+    payload = data[4:]
+    offset = 0
+    
+
+    if offset + 1 > len(payload):
+        raise ValueError("Unexpected end of data while reading agencia_id")
+    agencia_id = payload[offset]
+    offset += 1
+    
+    if offset + 2 > len(payload):
+        raise ValueError("Unexpected end of data while reading bet count")
+    bet_count = struct.unpack('>H', payload[offset:offset + 2])[0]
+    offset += 2
+    
+    apuestas = []
+    
+
+    for i in range(bet_count):
+        
+        nombre, offset = read_string(payload, offset)
+       
+        apellido, offset = read_string(payload, offset)
+        
+        if offset + 4 > len(payload):
+            raise ValueError(f"Unexpected end of data while reading documento for bet {i}")
+        documento = struct.unpack('>I', payload[offset:offset + 4])[0]
+        offset += 4
+        
+        if offset + 4 > len(payload):
+            raise ValueError(f"Unexpected end of data while reading nacimiento for bet {i}")
+        anio = struct.unpack('>H', payload[offset:offset + 2])[0]
+        mes = payload[offset + 2]
+        dia = payload[offset + 3]
+        offset += 4
+        nacimiento = anio * 10000 + mes * 100 + dia
+        
+        if offset + 2 > len(payload):
+            raise ValueError(f"Unexpected end of data while reading numero for bet {i}")
+        numero = struct.unpack('>H', payload[offset:offset + 2])[0]
+        offset += 2
+        
+        bet = BetRequest(agencia_id, nombre, apellido, documento, nacimiento, numero)
+        apuestas.append(bet)
+    
+    return BatchRequest(agencia_id, apuestas)
+
 def receive_message(socket):
     """Receive and parse a complete message from socket"""
     try:
@@ -123,6 +187,24 @@ def receive_message(socket):
         raise ValueError(f"Failed to parse message: {e}")
     except (ValueError, ConnectionError) as e:
         logging.error(f"Error while receiving message: {e}")
+        raise
+
+def receive_batch_message(socket):
+    """Receive and parse a batch message from socket"""
+    try:
+        length_bytes = recv_exactly(socket, 4)
+        length = struct.unpack('>I', length_bytes)[0]
+        
+        payload = recv_exactly(socket, length)
+        
+        complete_message = length_bytes + payload
+        
+        return parse_batch_request(complete_message)
+            
+    except struct.error as e:
+        raise ValueError(f"Failed to parse batch message: {e}")
+    except (ValueError, ConnectionError) as e:
+        logging.error(f"Error while receiving batch message: {e}")
         raise
 
 def send_bet_response(socket, status, message=""):
