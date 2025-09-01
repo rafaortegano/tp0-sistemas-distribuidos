@@ -3,3 +3,6 @@
 
 # Executables
 bin/
+
+# Data
+.data/
