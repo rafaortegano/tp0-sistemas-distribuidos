@@ -1,6 +1,7 @@
 package common
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 	"os"
@@ -150,6 +151,10 @@ func (c *Client) StartClientLoop() {
 				c.config.ID, batchID, len(batch.Apuestas), response.Message)
 		}
 		
+		if batch.IsLastBatch {
+			c.queryWinners(uint8(agenciaID))
+		}
+		
 		batchesSent++
 		
 		select {
@@ -188,6 +193,84 @@ func (c *Client) receiveResponse() (*BetResponse, error) {
 	return ReceiveResponse(c.conn)
 }
 
+// queryWinners queries the server for winners of this agency with retries
+func (c *Client) queryWinners(agenciaID uint8) {
+	maxRetries := 10
+	
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if err := c.createClientSocket(); err != nil {
+			log.Errorf("action: query_winners | result: fail | client_id: %v | attempt: %d | error: %v", c.config.ID, attempt, err)
+			if attempt < maxRetries {
+				time.Sleep(1 * time.Second)
+			}
+			continue
+		}
+		
+		if err := SendQueryWinners(c.conn, agenciaID); err != nil {
+			log.Errorf("action: query_winners | result: fail | client_id: %v | attempt: %d | error: %v", c.config.ID, attempt, err)
+			c.conn.Close()
+			if attempt < maxRetries {
+				time.Sleep(1 * time.Second)
+			}
+			continue
+		}
+		
+		lengthData, err := recvAll(c.conn, 4)
+		if err != nil {
+			log.Errorf("action: query_winners | result: fail | client_id: %v | attempt: %d | error: failed to read response length: %v", c.config.ID, attempt, err)
+			c.conn.Close()
+			if attempt < maxRetries {
+				time.Sleep(1 * time.Second)
+			}
+			continue
+		}
+		
+		length := binary.BigEndian.Uint32(lengthData)
+		responseData, err := recvAll(c.conn, int(length))
+		if err != nil {
+			log.Errorf("action: query_winners | result: fail | client_id: %v | attempt: %d | error: failed to read response: %v", c.config.ID, attempt, err)
+			c.conn.Close()
+			if attempt < maxRetries {
+				time.Sleep(1 * time.Second)
+			}
+			continue
+		}
+		
+		fullData := append(lengthData, responseData...)
+		winnersResp, err := DeserializeWinnersResponse(fullData)
+		if err != nil {
+			log.Errorf("action: query_winners | result: fail | client_id: %v | attempt: %d | error: failed to deserialize response: %v", c.config.ID, attempt, err)
+			c.conn.Close()
+			if attempt < maxRetries {
+				time.Sleep(1 * time.Second)
+			}
+			continue
+		}
+		
+		c.conn.Close()
+		
+		if winnersResp.Status != STATUS_OK {
+			log.Errorf("action: query_winners | result: fail | client_id: %v | attempt: %d | error: server returned error", c.config.ID, attempt)
+			if attempt < maxRetries {
+				time.Sleep(1 * time.Second)
+			}
+			continue
+		}
+		
+		if len(winnersResp.WinnerDNIs) == 0 && attempt < maxRetries {
+			log.Debugf("action: query_winners | result: retry | client_id: %v | attempt: %d | reason: zero_winners_retry", c.config.ID, attempt)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+				log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winnersResp.WinnerDNIs))
+		return
+	}
+	
+	log.Errorf("action: consulta_ganadores | result: fail | client_id: %v | reason: max_retries_exceeded", c.config.ID)
+}
+
+
+
 // sendBatch sends a batch of bets to the server
 func (c *Client) sendBatch(batch *Batch) error {
 	return SendBatch(c.conn, batch)
@@ -198,7 +281,7 @@ func (c *Client) createBatches(bets []Bet, agenciaID uint8) []Batch {
 	var batches []Batch
 	maxAmount := c.config.BatchMaxAmount
 	
-	currentBatch := Batch{AgenciaID: agenciaID, Apuestas: make([]Bet, 0)}
+	currentBatch := Batch{AgenciaID: agenciaID, Apuestas: make([]Bet, 0), IsLastBatch: false}
 	currentSizeBytes := batchHeaderSize
 	
 	for _, bet := range bets {
@@ -206,7 +289,7 @@ func (c *Client) createBatches(bets []Bet, agenciaID uint8) []Batch {
 			if len(currentBatch.Apuestas) > 0 {
 				batches = append(batches, currentBatch)
 			}
-			currentBatch = Batch{AgenciaID: agenciaID, Apuestas: make([]Bet, 0)}
+			currentBatch = Batch{AgenciaID: agenciaID, Apuestas: make([]Bet, 0), IsLastBatch: false}
 			currentSizeBytes = batchHeaderSize
 		}
 		
@@ -215,7 +298,7 @@ func (c *Client) createBatches(bets []Bet, agenciaID uint8) []Batch {
 			if len(currentBatch.Apuestas) > 0 {
 				batches = append(batches, currentBatch)
 			}
-			currentBatch = Batch{AgenciaID: agenciaID, Apuestas: make([]Bet, 0)}
+			currentBatch = Batch{AgenciaID: agenciaID, Apuestas: make([]Bet, 0), IsLastBatch: false}
 			currentSizeBytes = batchHeaderSize
 		}
 		
@@ -225,6 +308,10 @@ func (c *Client) createBatches(bets []Bet, agenciaID uint8) []Batch {
 	
 	if len(currentBatch.Apuestas) > 0 {
 		batches = append(batches, currentBatch)
+	}
+	
+	if len(batches) > 0 {
+		batches[len(batches)-1].IsLastBatch = true
 	}
 	
 	return batches
