@@ -10,6 +10,10 @@ import (
 const (
 	STATUS_OK    = 0x00
 	STATUS_ERROR = 0x01
+	
+	MSG_TYPE_BATCH         = 0x01
+	MSG_TYPE_QUERY_WINNERS = 0x02
+	MSG_TYPE_WINNERS_RESP  = 0x03
 )
 
 type BetResponse struct {
@@ -17,11 +21,32 @@ type BetResponse struct {
 	Message string
 }
 
+// QueryWinnersRequest represents a request to query winners for an agency
+type QueryWinnersRequest struct {
+	AgenciaID uint8
+}
+
+// WinnersResponse represents the response with winners for an agency
+type WinnersResponse struct {
+	Status       uint8
+	WinnerCount  uint16
+	WinnerDNIs   []uint32
+}
+
 // SerializeBatch serializes a batch of bets to binary
 func SerializeBatch(batch *Batch) ([]byte, error) {
 	payloadBuf := new(bytes.Buffer)
 	
+
+	binary.Write(payloadBuf, binary.BigEndian, uint8(MSG_TYPE_BATCH))
+	
 	binary.Write(payloadBuf, binary.BigEndian, batch.AgenciaID)
+	
+	var isLastByte uint8 = 0
+	if batch.IsLastBatch {
+		isLastByte = 1
+	}
+	binary.Write(payloadBuf, binary.BigEndian, isLastByte)
 	
 	binary.Write(payloadBuf, binary.BigEndian, uint16(len(batch.Apuestas)))
 
@@ -187,6 +212,76 @@ func SendBatch(writer io.Writer, batch *Batch) error {
 	data, err := SerializeBatch(batch)
 	if err != nil {
 		return fmt.Errorf("failed to serialize batch: %v", err)
+	}
+	
+	return sendAll(writer, data)
+}
+
+// SerializeQueryWinners serializes a query winners request to binary
+func SerializeQueryWinners(request *QueryWinnersRequest) ([]byte, error) {
+	payloadBuf := new(bytes.Buffer)
+	
+	binary.Write(payloadBuf, binary.BigEndian, uint8(MSG_TYPE_QUERY_WINNERS))
+	
+	binary.Write(payloadBuf, binary.BigEndian, request.AgenciaID)
+	
+	payload := payloadBuf.Bytes()
+	finalBuf := new(bytes.Buffer)
+	binary.Write(finalBuf, binary.BigEndian, uint32(len(payload)))
+	finalBuf.Write(payload)
+	
+	return finalBuf.Bytes(), nil
+}
+
+// DeserializeWinnersResponse deserializes a winners response from binary
+func DeserializeWinnersResponse(data []byte) (*WinnersResponse, error) {
+	if len(data) < 4 {
+		return nil, fmt.Errorf("data too short for response length")
+	}
+	
+	buf := bytes.NewReader(data)
+	
+	var length uint32
+	if err := binary.Read(buf, binary.BigEndian, &length); err != nil {
+		return nil, fmt.Errorf("failed to read response length: %v", err)
+	}
+	
+	if len(data) != int(4+length) {
+		return nil, fmt.Errorf("response length mismatch")
+	}
+	
+	var status uint8
+	if err := binary.Read(buf, binary.BigEndian, &status); err != nil {
+		return nil, fmt.Errorf("failed to read status: %v", err)
+	}
+	
+	var winnerCount uint16
+	if err := binary.Read(buf, binary.BigEndian, &winnerCount); err != nil {
+		return nil, fmt.Errorf("failed to read winner count: %v", err)
+	}
+	
+	winnerDNIs := make([]uint32, winnerCount)
+	for i := uint16(0); i < winnerCount; i++ {
+		var dni uint32
+		if err := binary.Read(buf, binary.BigEndian, &dni); err != nil {
+			return nil, fmt.Errorf("failed to read DNI %d: %v", i, err)
+		}
+		winnerDNIs[i] = dni
+	}
+	
+	return &WinnersResponse{
+		Status:      status,
+		WinnerCount: winnerCount,
+		WinnerDNIs:  winnerDNIs,
+	}, nil
+}
+
+// SendQueryWinners sends a query winners request
+func SendQueryWinners(writer io.Writer, agenciaID uint8) error {
+	request := &QueryWinnersRequest{AgenciaID: agenciaID}
+	data, err := SerializeQueryWinners(request)
+	if err != nil {
+		return fmt.Errorf("failed to serialize query winners request: %v", err)
 	}
 	
 	return sendAll(writer, data)
