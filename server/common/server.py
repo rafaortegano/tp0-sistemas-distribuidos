@@ -144,7 +144,7 @@ class Server:
             logging.info(f'action: sorteo | result: success | total_winners: {total_winners}')
             
             for agency_id, winners in self._winners_by_agency.items():
-                logging.info(f'action: winners_calculated | agency_id: {agency_id} | winner_count: {len(winners)}')
+                logging.info(f'action: winners_calculated | result: success | agency_id: {agency_id} | winner_count: {len(winners)}')
                 
         except Exception as e:
             logging.error(f'action: sorteo | result: fail | error: {e}')
