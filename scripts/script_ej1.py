@@ -8,7 +8,7 @@ output_file = sys.argv[1]
 clients_number = int(sys.argv[2])
 
 with open(output_file, 'w') as f:
-    f.write("""name: tp0
+    f.write(f"""name: tp0
 services:
   server:
     container_name: server
@@ -16,6 +16,7 @@ services:
     entrypoint: python3 /main.py
     environment:
       - PYTHONUNBUFFERED=1
+      - EXPECTED_AGENCIES={clients_number}
     networks:
       - testing_net
     volumes:
