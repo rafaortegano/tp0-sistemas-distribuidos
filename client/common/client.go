@@ -107,7 +107,11 @@ func (c *Client) StartClientLoop() {
 	
 	batches := c.createBatches(bets, uint8(agenciaID))
 	
-	
+	if err := c.createClientSocket(); err != nil {
+		return
+	}
+	defer c.conn.Close()
+
 	// There is an autoincremental batchID to identify every batch sent  
 	// Send batches if the batch amount threshold has not been surpassed
 	batchesSent := 0
@@ -120,28 +124,19 @@ func (c *Client) StartClientLoop() {
 		}
 		
 		batch := batches[batchesSent]
-		
-		
-		if err := c.createClientSocket(); err != nil {
-			return
-		}
 
 		if err := c.sendBatch(&batch); err != nil {
 			log.Errorf("action: enviar_batch | result: fail | client_id: %v | batch_id: %d | error: %v", 
 				c.config.ID, batchID, err)
-			c.conn.Close()
-			return
+			continue
 		}
 		
 		response, err := c.receiveResponse()
 		if err != nil {
 			log.Errorf("action: receive_response | result: fail | client_id: %v | batch_id: %d | error: %v",
 				c.config.ID, batchID, err)
-			c.conn.Close()
-			return
+			continue
 		}
-		
-		c.conn.Close()
 		
 		if response.Status == STATUS_OK {
 			log.Infof("action: batch_enviado | result: success | client_id: %v | batch_id: %d | cantidad: %d",
@@ -198,17 +193,8 @@ func (c *Client) queryWinners(agenciaID uint8) {
 	maxRetries := 10
 	
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		if err := c.createClientSocket(); err != nil {
-			log.Errorf("action: query_winners | result: fail | client_id: %v | attempt: %d | error: %v", c.config.ID, attempt, err)
-			if attempt < maxRetries {
-				time.Sleep(1 * time.Second)
-			}
-			continue
-		}
-		
 		if err := SendQueryWinners(c.conn, agenciaID); err != nil {
 			log.Errorf("action: query_winners | result: fail | client_id: %v | attempt: %d | error: %v", c.config.ID, attempt, err)
-			c.conn.Close()
 			if attempt < maxRetries {
 				time.Sleep(1 * time.Second)
 			}
@@ -218,7 +204,6 @@ func (c *Client) queryWinners(agenciaID uint8) {
 		lengthData, err := recvAll(c.conn, 4)
 		if err != nil {
 			log.Errorf("action: query_winners | result: fail | client_id: %v | attempt: %d | error: failed to read response length: %v", c.config.ID, attempt, err)
-			c.conn.Close()
 			if attempt < maxRetries {
 				time.Sleep(1 * time.Second)
 			}
@@ -229,7 +214,6 @@ func (c *Client) queryWinners(agenciaID uint8) {
 		responseData, err := recvAll(c.conn, int(length))
 		if err != nil {
 			log.Errorf("action: query_winners | result: fail | client_id: %v | attempt: %d | error: failed to read response: %v", c.config.ID, attempt, err)
-			c.conn.Close()
 			if attempt < maxRetries {
 				time.Sleep(1 * time.Second)
 			}
@@ -240,14 +224,11 @@ func (c *Client) queryWinners(agenciaID uint8) {
 		winnersResp, err := DeserializeWinnersResponse(fullData)
 		if err != nil {
 			log.Errorf("action: query_winners | result: fail | client_id: %v | attempt: %d | error: failed to deserialize response: %v", c.config.ID, attempt, err)
-			c.conn.Close()
 			if attempt < maxRetries {
 				time.Sleep(1 * time.Second)
 			}
 			continue
 		}
-		
-		c.conn.Close()
 		
 		if winnersResp.Status != STATUS_OK {
 			log.Errorf("action: query_winners | result: fail | client_id: %v | attempt: %d | error: server returned error", c.config.ID, attempt)
@@ -262,7 +243,7 @@ func (c *Client) queryWinners(agenciaID uint8) {
 			time.Sleep(1 * time.Second)
 			continue
 		}
-				log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winnersResp.WinnerDNIs))
+		log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", len(winnersResp.WinnerDNIs))
 		return
 	}
 	
