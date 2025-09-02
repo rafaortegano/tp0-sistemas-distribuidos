@@ -102,11 +102,11 @@ class Server:
                 
                 if not self._sorteo_realizado:
                     send_winners_response(client_sock, STATUS_OK, [])
-                    logging.info(f'action: consulta_ganadores | result: success | agency_id: {query_request.agencia_id} | cant_ganadores: 0 | note: sorteo_pendiente')
+                    logging.info(f'action: respuesta_ganadores | result: success | agency_id: {query_request.agencia_id} | cant_ganadores: 0 | note: sorteo_pendiente')
                 else:
                     agency_winners = self._winners_by_agency.get(query_request.agencia_id, [])
                     send_winners_response(client_sock, STATUS_OK, agency_winners)
-                    logging.info(f'action: consulta_ganadores | result: success | agency_id: {query_request.agencia_id} | cant_ganadores: {len(agency_winners)}')
+                    logging.info(f'action: respuesta_ganadores | result: success | agency_id: {query_request.agencia_id} | cant_ganadores: {len(agency_winners)}')
             else:
                 raise ValueError(f"Unknown message type: {msg_type}")
                 
