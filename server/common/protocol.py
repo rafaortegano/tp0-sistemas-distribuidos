@@ -144,7 +144,7 @@ def parse_batch_request(data):
     if len(data) < 4:
         raise ValueError("Message too short for batch")
     
-    msg_length = struct.unpack('>I', data[:4])[0]
+    msg_length = bytes_to_uint32_be(data[:4])
     
     if len(data) != 4 + msg_length:
         raise ValueError(f"Message length mismatch: expected {4 + msg_length}, got {len(data)}")
@@ -160,7 +160,7 @@ def parse_batch_request(data):
     
     if offset + 2 > len(payload):
         raise ValueError("Unexpected end of data while reading bet count")
-    bet_count = struct.unpack('>H', payload[offset:offset + 2])[0]
+    bet_count = bytes_to_uint16_be(payload[offset:offset + 2])
     offset += 2
     
     apuestas = []
@@ -174,12 +174,12 @@ def parse_batch_request(data):
         
         if offset + 4 > len(payload):
             raise ValueError(f"Unexpected end of data while reading documento for bet {i}")
-        documento = struct.unpack('>I', payload[offset:offset + 4])[0]
+        documento = bytes_to_uint32_be(payload[offset:offset + 4])
         offset += 4
         
         if offset + 4 > len(payload):
             raise ValueError(f"Unexpected end of data while reading nacimiento for bet {i}")
-        anio = struct.unpack('>H', payload[offset:offset + 2])[0]
+        anio = bytes_to_uint16_be(payload[offset:offset + 2])
         mes = payload[offset + 2]
         dia = payload[offset + 3]
         offset += 4
@@ -187,7 +187,7 @@ def parse_batch_request(data):
         
         if offset + 2 > len(payload):
             raise ValueError(f"Unexpected end of data while reading numero for bet {i}")
-        numero = struct.unpack('>H', payload[offset:offset + 2])[0]
+        numero = bytes_to_uint16_be(payload[offset:offset + 2])
         offset += 2
         
         bet = BetRequest(agencia_id, nombre, apellido, documento, nacimiento, numero)
@@ -216,7 +216,7 @@ def receive_batch_message(socket):
     """Receive and parse a batch message from socket"""
     try:
         length_bytes = recv_exactly(socket, 4)
-        length = struct.unpack('>I', length_bytes)[0]
+        length = bytes_to_uint32_be(length_bytes)
         
         payload = recv_exactly(socket, length)
         
@@ -224,8 +224,6 @@ def receive_batch_message(socket):
         
         return parse_batch_request(complete_message)
             
-    except struct.error as e:
-        raise ValueError(f"Failed to parse batch message: {e}")
     except (ValueError, ConnectionError) as e:
         logging.error(f"Error while receiving batch message: {e}")
         raise
