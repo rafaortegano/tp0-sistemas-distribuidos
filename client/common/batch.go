@@ -8,6 +8,7 @@ import (
 type Batch struct {
 	AgenciaID uint8
 	Apuestas  []Bet
+	IsLastBatch  bool
 }
 
 // NewBatch creates a new batch for the given agency
@@ -15,6 +16,7 @@ func NewBatch(agenciaID uint8) *Batch {
 	return &Batch{
 		AgenciaID: agenciaID,
 		Apuestas:  make([]Bet, 0),
+		IsLastBatch: false,
 	}
 }
 
