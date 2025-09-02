@@ -1,8 +1,31 @@
-import struct
 import logging
 
 STATUS_OK = 0x00
 STATUS_ERROR = 0x01
+
+def uint32_to_bytes_be(value):
+    """Convert uint32 to 4 bytes big-endian"""
+    return bytes([
+        (value >> 24) & 0xFF,
+        (value >> 16) & 0xFF,
+        (value >> 8) & 0xFF,
+        value & 0xFF
+    ])
+
+def uint16_to_bytes_be(value):
+    """Convert uint16 to 2 bytes big-endian"""
+    return bytes([
+        (value >> 8) & 0xFF,
+        value & 0xFF
+    ])
+
+def bytes_to_uint32_be(data):
+    """Convert 4 bytes big-endian to uint32"""
+    return (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]
+
+def bytes_to_uint16_be(data):
+    """Convert 2 bytes big-endian to uint16"""
+    return (data[0] << 8) | data[1]
 
 
 class BetRequest:
@@ -24,13 +47,15 @@ class BetResponse:
     
     def serialize(self):
         """Serialize response to binary format"""
-        payload = struct.pack('B', self.status)
+        payload = bytearray()
+        payload.append(self.status)
         
         message_bytes = self.message.encode('utf-8') if self.message else b''
-        payload += struct.pack('B', len(message_bytes)) + message_bytes
+        payload.append(len(message_bytes))
+        payload.extend(message_bytes)
         
         length = len(payload)
-        return struct.pack('>I', length) + payload
+        return uint32_to_bytes_be(length) + bytes(payload)
 
 def recv_exactly(socket, length):
     """Receive exactly 'length' bytes from socket"""
@@ -68,7 +93,7 @@ def parse_bet_request(data):
     if len(data) < 4:
         raise ValueError("Message too short")
     
-    msg_length = struct.unpack('>I', data[:4])[0]
+    msg_length = bytes_to_uint32_be(data[:4])
     
     if len(data) != 4 + msg_length:
         raise ValueError(f"Message length mismatch: expected {4 + msg_length}, got {len(data)}")
@@ -88,12 +113,12 @@ def parse_bet_request(data):
     
     if offset + 4 > len(payload):
         raise ValueError("Unexpected end of data while reading documento")
-    documento = struct.unpack('>I', payload[offset:offset + 4])[0]
+    documento = bytes_to_uint32_be(payload[offset:offset + 4])
     offset += 4
     
     if offset + 4 > len(payload):
         raise ValueError("Unexpected end of data while reading nacimiento")
-    anio = struct.unpack('>H', payload[offset:offset + 2])[0]
+    anio = bytes_to_uint16_be(payload[offset:offset + 2])
     mes = payload[offset + 2]
     dia = payload[offset + 3]
     offset += 4
@@ -102,7 +127,7 @@ def parse_bet_request(data):
    
     if offset + 2 > len(payload):
         raise ValueError("Unexpected end of data while reading numero")
-    numero = struct.unpack('>H', payload[offset:offset + 2])[0]
+    numero = bytes_to_uint16_be(payload[offset:offset + 2])
     
     return BetRequest(agencia_id, nombre, apellido, documento, nacimiento, numero)
 
@@ -111,7 +136,7 @@ def receive_message(socket):
     try:
        
         length_bytes = recv_exactly(socket, 4)
-        length = struct.unpack('>I', length_bytes)[0]
+        length = bytes_to_uint32_be(length_bytes)
         
         payload = recv_exactly(socket, length)
         
@@ -119,8 +144,6 @@ def receive_message(socket):
         
         return parse_bet_request(complete_message)
             
-    except struct.error as e:
-        raise ValueError(f"Failed to parse message: {e}")
     except (ValueError, ConnectionError) as e:
         logging.error(f"Error while receiving message: {e}")
         raise
