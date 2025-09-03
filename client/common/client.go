@@ -3,6 +3,7 @@ package common
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -88,10 +89,11 @@ func (c *Client) StartClientLoop() {
 		c.conn.Close()
 
 		if err != nil {
-			log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
-				c.config.ID,
-				err,
-			)
+			if err == io.EOF {
+				log.Infof("action: receive_message | result: server_shutdown | client_id: %v | msg: server closed connection", c.config.ID)
+			} else {
+				log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v", c.config.ID, err)
+			}
 			return
 		}
 
@@ -119,9 +121,11 @@ func (c *Client) setupSignalHandler() {
 		sig := <-signalChan
 		log.Infof("action: signal_received | result: success | client_id: %v | signal: %v", c.config.ID, sig)
 		
-		select {
-		case c.shutdownChan <- true:
-		default:
+		c.shutdownChan <- true
+
+		if c.conn != nil {
+			c.conn.Close()
+			log.Infof("action: close_connection | result: success | client_id: %v", c.config.ID)
 		}
 	}()
 }
@@ -129,11 +133,11 @@ func (c *Client) setupSignalHandler() {
 // cleanup closes connection and logs shutdown
 func (c *Client) cleanup() {
 	log.Infof("action: client_shutdown | result: in_progress | client_id: %v", c.config.ID)
-	
+
 	if c.conn != nil {
 		c.conn.Close()
 		log.Infof("action: close_connection | result: success | client_id: %v", c.config.ID)
 	}
-	
+
 	log.Infof("action: client_shutdown | result: success | client_id: %v", c.config.ID)
 }
