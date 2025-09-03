@@ -115,7 +115,7 @@ class Server:
                     raise ValueError(f"Unknown message type: {msg_type}")
                     
         except OSError as e:
-            logging.error(f"action: handle_client | result: fail | error: {e}")
+            logging.info(f"action: handle_client | result: finish | error: {e}")
             try:
                 send_bet_response(client_sock, STATUS_ERROR, "Error al procesar mensaje")
             except:
