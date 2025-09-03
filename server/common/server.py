@@ -12,6 +12,7 @@ class Server:
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
         self._running = True
+        self._client_socket = None
         
         signal.signal(signal.SIGTERM, self._signal_handler)
 
@@ -29,7 +30,9 @@ class Server:
                 try:
                     client_sock = self.__accept_new_connection()
                     if client_sock:
+                        self._client_sockets = client_sock
                         self.__handle_client_connection(client_sock)
+                        self._client_sockets = None
                 except socket.error as e:
                     if self._running:
                         logging.error(f"action: accept_connection | result: fail | error: {e}")
@@ -96,14 +99,15 @@ class Server:
         
         if self._server_socket:
             self._server_socket.close()
-    
+        
+        if self._client_socket:
+            self._client_socket.shutdown(socket.SHUT_RDWR)
+            self._client_socket.close()
+
     def _cleanup(self):
         """Cleans up resources during shutdown"""
         logging.info('action: shutdown_server | result: in_progress')
-        if hasattr(self, '_server_socket') and self._server_socket:
-            try:
-                self._server_socket.close()
-                logging.info('action: close_server_socket | result: success')
-            except:
-                pass
+        if self._running and self._server_socket:
+            self._server_socket.close()
+            logging.info('action: close_server_socket | result: success')
         logging.info('action: shutdown_server | result: success')
