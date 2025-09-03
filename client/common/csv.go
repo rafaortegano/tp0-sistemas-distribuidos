@@ -75,3 +75,65 @@ func parseBetFromCSV(record []string, agenciaID uint8, lineNum int) (*Bet, error
 
 	return bet, nil
 }
+
+// ProcessCSVStreaming reads CSV file line by line and calls batchHandler for each completed batch
+func ProcessCSVStreaming(filename string, agenciaID uint8, maxBatchSize int, batchHandler func(*Batch, bool) error) error {
+	file, err := os.Open(filename)
+	if err != nil {
+		return fmt.Errorf("failed to open CSV file %s: %v", filename, err)
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	currentBatch := Batch{AgenciaID: agenciaID, Apuestas: make([]Bet, 0, maxBatchSize)}
+	currentSizeBytes := batchHeaderSize
+	skippedCount := 0
+	validBetsCount := 0
+	lineNum := 0
+
+	for {
+		record, err := reader.Read()
+		if err != nil {
+			if err.Error() == "EOF" {
+				break
+			}
+			return fmt.Errorf("failed to read CSV line %d: %v", lineNum+1, err)
+		}
+		
+		lineNum++
+		bet, err := parseBetFromCSV(record, agenciaID, lineNum)
+		if err != nil {
+			log.Debugf("action: bet_skipped | line: %d | error: %v", lineNum, err)
+			skippedCount++
+			continue
+		}
+
+		estimatedBetSize := betFixedFieldsSize + len(bet.Nombre) + len(bet.Apellido)
+		if len(currentBatch.Apuestas) >= maxBatchSize || 
+		   (len(currentBatch.Apuestas) > 0 && currentSizeBytes + estimatedBetSize > maxSafeBatchSize) {
+			
+			if err := batchHandler(&currentBatch, false); err != nil {
+				return err
+			}
+			
+			currentBatch = Batch{AgenciaID: agenciaID, Apuestas: make([]Bet, 0, maxBatchSize)}
+			currentSizeBytes = batchHeaderSize
+		}
+
+		currentBatch.Apuestas = append(currentBatch.Apuestas, *bet)
+		currentSizeBytes += estimatedBetSize
+		validBetsCount++
+	}
+
+	if len(currentBatch.Apuestas) > 0 {
+		if err := batchHandler(&currentBatch, true); err != nil {
+			return err
+		}
+	}
+
+	if skippedCount > 0 {
+		log.Debugf("action: read_csv | result: partial | client_id: %v | valid_bets: %d | skipped_bets: %d", 
+			"streaming", validBetsCount, skippedCount)
+	}
+	return nil
+}
