@@ -2,6 +2,7 @@ import socket
 import logging
 import signal
 import os
+import threading
 from common.protocol import (
     receive_message, receive_batch_message, send_bet_response, 
     receive_query_winners_message, send_winners_response,
@@ -25,15 +26,17 @@ class Server:
         self._sorteo_realizado = False
         self._winners_by_agency = {} 
         
+        self._lock = threading.Lock()
+        self._active_threads = []
+        
         signal.signal(signal.SIGTERM, self._signal_handler)
 
     def run(self):
         """
-        Dummy Server loop
+        Threaded Server loop
 
-        Server that accept a new connections and establishes a
-        communication with a client. After client with communucation
-        finishes, servers starts to accept new connections again
+        Server that accepts new connections and creates a thread for each client.
+        Each client connection is handled in a concurrent way.
         """
 
         try:
@@ -41,7 +44,15 @@ class Server:
                 try:
                     client_sock = self.__accept_new_connection()
                     if client_sock:
-                        self.__handle_client_connection(client_sock)
+                        client_thread = threading.Thread(
+                            target=self.__handle_client_connection, 
+                            args=(client_sock,)
+                        )
+                        client_thread.start()
+                        
+                        with self._lock:
+                            self._active_threads.append(client_thread)
+                            
                 except socket.error as e:
                     if self._running:
                         logging.error(f"action: accept_connection | result: fail | error: {e}")
@@ -93,24 +104,26 @@ class Server:
                     logging.info(f'action: apuesta_recibida | result: success | cantidad: {len(batch_request.apuestas)}')
                     
                     if batch_request.is_last_batch:
-                        self._finished_agencies.add(batch_request.agencia_id)
-                        logging.info(f'action: agency_finished | result: success | agency_id: {batch_request.agencia_id} | finished_count: {len(self._finished_agencies)}')
-                        
-                        if len(self._finished_agencies) == self._expected_agencies and not self._sorteo_realizado:
-                            self._perform_lottery_draw()
+                        with self._lock:
+                            self._finished_agencies.add(batch_request.agencia_id)
+                            logging.info(f'action: agency_finished | result: success | agency_id: {batch_request.agencia_id} | finished_count: {len(self._finished_agencies)}')
+                            
+                            if len(self._finished_agencies) == self._expected_agencies and not self._sorteo_realizado:
+                                self._perform_lottery_draw()
                     
                     send_bet_response(client_sock, STATUS_OK, f"Batch de {len(batch_request.apuestas)} apuestas registrado exitosamente")
                     
                 elif msg_type == MSG_TYPE_QUERY_WINNERS:
                     query_request = parse_query_winners_request(complete_message)
                     
-                    if not self._sorteo_realizado:
-                        send_winners_response(client_sock, STATUS_OK, [])
-                        logging.info(f'action: respuesta_ganadores | result: success | agency_id: {query_request.agencia_id} | cant_ganadores: 0 | note: sorteo_pendiente')
-                    else:
-                        agency_winners = self._winners_by_agency.get(query_request.agencia_id, [])
-                        send_winners_response(client_sock, STATUS_OK, agency_winners)
-                        logging.info(f'action: respuesta_ganadores | result: success | agency_id: {query_request.agencia_id} | cant_ganadores: {len(agency_winners)}')
+                    with self._lock:
+                        if not self._sorteo_realizado:
+                            send_winners_response(client_sock, STATUS_OK, [])
+                            logging.info(f'action: respuesta_ganadores | result: success | agency_id: {query_request.agencia_id} | cant_ganadores: 0 | note: sorteo_pendiente')
+                        else:
+                            agency_winners = self._winners_by_agency.get(query_request.agencia_id, [])
+                            send_winners_response(client_sock, STATUS_OK, agency_winners)
+                            logging.info(f'action: respuesta_ganadores | result: success | agency_id: {query_request.agencia_id} | cant_ganadores: {len(agency_winners)}')
                 else:
                     raise ValueError(f"Unknown message type: {msg_type}")
                     
@@ -122,6 +135,7 @@ class Server:
                 pass
         finally:
             client_sock.close()
+            self._cleanup_finished_threads()
     
     def _perform_lottery_draw(self):
         """
@@ -154,6 +168,10 @@ class Server:
             logging.error(f'action: sorteo | result: fail | error: {e}')
             self._sorteo_realizado = True
 
+    def _cleanup_finished_threads(self):
+        with self._lock:
+            self._active_threads = [t for t in self._active_threads if t.is_alive()]
+
     def __accept_new_connection(self):
         """
         Accept new connections
@@ -182,6 +200,21 @@ class Server:
     def _cleanup(self):
         """Cleans up resources during shutdown"""
         logging.info('action: shutdown_server | result: in_progress')
+        
+        with self._lock:
+            active_threads = self._active_threads.copy()
+        
+        logging.info(f'action: waiting_for_threads | result: in_progress | thread_count: {len(active_threads)}')
+        
+        for i, thread in enumerate(active_threads):
+            if thread.is_alive():
+                logging.info(f'action: joining_thread | result: in_progress | thread_index: {i+1}')
+                thread.join(timeout=10.0) 
+                if thread.is_alive():
+                    logging.warning(f'action: thread_join_timeout | result: warning | thread_index: {i+1} | note: thread did not finish in time')
+                else:
+                    logging.info(f'action: thread_joined | result: success | thread_index: {i+1}')
+        
         if hasattr(self, '_server_socket') and self._server_socket:
             try:
                 self._server_socket.close()
