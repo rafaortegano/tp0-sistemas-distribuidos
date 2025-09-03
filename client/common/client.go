@@ -88,54 +88,42 @@ func (c *Client) StartClientLoop() {
 	}
 	
 	filename := fmt.Sprintf("/data/agency-%s.csv", c.config.ID)
-	bets, skippedCount, err := ReadBetsFromCSV(filename, uint8(agenciaID))
-	if err != nil {
-		log.Errorf("action: read_csv | result: fail | client_id: %v | file: %s | error: %v", 
-			c.config.ID, filename, err)
-		return
-	}
-	
-	if skippedCount > 0 {
-		log.Debugf("action: read_csv | result: partial | client_id: %v | valid_bets: %d | skipped_bets: %d", 
-			c.config.ID, len(bets), skippedCount)
-	}
-	
-	if len(bets) == 0 {
-		log.Infof("action: read_csv | result: success | client_id: %v | total_bets: 0", c.config.ID)
-		return
-	}
-	
-	batches := c.createBatches(bets, uint8(agenciaID))
 	
 	if err := c.createClientSocket(); err != nil {
 		return
 	}
 	defer c.conn.Close()
 
-	// There is an autoincremental batchID to identify every batch sent  
-	// Send batches if the batch amount threshold has not been surpassed
-	batchesSent := 0
-	for batchID := 1; batchID <= c.config.LoopAmount && batchesSent < len(batches); batchID++ {
+	batchID := 1
+	err = ProcessCSVStreaming(filename, uint8(agenciaID), c.config.BatchMaxAmount, func(batch *Batch, isLast bool) error {
 		select {
 		case <-c.shutdownChan:
 			log.Infof("action: shutdown_requested | result: success | client_id: %v", c.config.ID)
-			return
+			return fmt.Errorf("shutdown requested")
 		default:
 		}
-		
-		batch := batches[batchesSent]
 
-		if err := c.sendBatch(&batch); err != nil {
+		if batchID > c.config.LoopAmount {
+			return fmt.Errorf("batch limit reached")
+		}
+
+		if isLast {
+			batch.IsLastBatch = true
+		}
+
+		if err := c.sendBatch(batch); err != nil {
 			log.Errorf("action: enviar_batch | result: fail | client_id: %v | batch_id: %d | error: %v", 
 				c.config.ID, batchID, err)
-			continue
+			batchID++
+			return nil 
 		}
 		
 		response, err := c.receiveResponse()
 		if err != nil {
 			log.Errorf("action: receive_response | result: fail | client_id: %v | batch_id: %d | error: %v",
 				c.config.ID, batchID, err)
-			continue
+			batchID++
+			return nil
 		}
 		
 		if response.Status == STATUS_OK {
@@ -150,16 +138,23 @@ func (c *Client) StartClientLoop() {
 			c.queryWinners(uint8(agenciaID))
 		}
 		
-		batchesSent++
-		
+		batchID++
 		select {
 		case <-c.shutdownChan:
 			log.Infof("action: shutdown_requested | result: success | client_id: %v", c.config.ID)
-			return
+			return fmt.Errorf("shutdown requested")
 		case <-time.After(c.config.LoopPeriod):
 		}
+		
+		return nil
+	})
+	
+	if err != nil {
+		log.Errorf("action: process_csv_streaming | result: fail | client_id: %v | error: %v", c.config.ID, err)
+		return
 	}
-	log.Infof("action: loop_finished | result: success | client_id: %v | batches_sent: %d", c.config.ID, batchesSent)
+	
+	log.Infof("action: loop_finished | result: success | client_id: %v | batches_sent: %d", c.config.ID, batchID-1)
 }
 
 // setupSignalHandler configures signal handling for graceful shutdown
