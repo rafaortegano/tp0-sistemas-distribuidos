@@ -6,7 +6,6 @@ STATUS_ERROR = 0x01
 
 MSG_TYPE_BATCH = 0x01
 MSG_TYPE_QUERY_WINNERS = 0x02
-MSG_TYPE_WINNERS_RESP = 0x03
 
 def uint32_to_bytes_be(value):
     """Convert uint32 to 4 bytes big-endian"""

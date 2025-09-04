@@ -13,7 +13,6 @@ const (
 	
 	MSG_TYPE_BATCH         = 0x01
 	MSG_TYPE_QUERY_WINNERS = 0x02
-	MSG_TYPE_WINNERS_RESP  = 0x03
 )
 
 type BetResponse struct {
