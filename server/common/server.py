@@ -27,7 +27,7 @@ class Server:
         self._winners_by_agency = {} 
         
         self._lock = threading.Lock()
-        self._active_threads = []
+        self._active_threads = {}
         
         signal.signal(signal.SIGTERM, self._signal_handler)
 
@@ -50,9 +50,8 @@ class Server:
                         )
                         client_thread.start()
                         
-                        with self._lock:
-                            self._active_threads.append(client_thread)
-                            
+                        self._active_threads[client_thread] = client_sock
+        
                 except socket.error as e:
                     if self._running:
                         logging.error(f"action: accept_connection | result: fail | error: {e}")
@@ -135,7 +134,6 @@ class Server:
                 pass
         finally:
             client_sock.close()
-            self._cleanup_finished_threads()
     
     def _perform_lottery_draw(self):
         """
@@ -168,10 +166,6 @@ class Server:
             logging.error(f'action: sorteo | result: fail | error: {e}')
             self._sorteo_realizado = True
 
-    def _cleanup_finished_threads(self):
-        with self._lock:
-            self._active_threads = [t for t in self._active_threads if t.is_alive()]
-
     def __accept_new_connection(self):
         """
         Accept new connections
@@ -196,29 +190,26 @@ class Server:
         
         if self._server_socket:
             self._server_socket.close()
+        
+        logging.info(f'action: shutdown_threads | result: in_progress | thread_count: {len(self._active_threads)}')
+        
+        for thread, client_sock in self._active_threads.items():
+            if thread.is_alive():
+                try:
+                    client_sock.shutdown(socket.SHUT_RDWR)
+                    client_sock.close()
+                    thread.join()
+                except Exception as e:
+                    logging.error(f'action: thread_shutdown | result: fail | error: {e}')
+
     
     def _cleanup(self):
-        """Cleans up resources during shutdown"""
         logging.info('action: shutdown_server | result: in_progress')
-        
-        with self._lock:
-            active_threads = self._active_threads.copy()
-        
-        logging.info(f'action: waiting_for_threads | result: in_progress | thread_count: {len(active_threads)}')
-        
-        for i, thread in enumerate(active_threads):
-            if thread.is_alive():
-                logging.info(f'action: joining_thread | result: in_progress | thread_index: {i+1}')
-                thread.join(timeout=10.0) 
-                if thread.is_alive():
-                    logging.warning(f'action: thread_join_timeout | result: warning | thread_index: {i+1} | note: thread did not finish in time')
-                else:
-                    logging.info(f'action: thread_joined | result: success | thread_index: {i+1}')
-        
-        if hasattr(self, '_server_socket') and self._server_socket:
+
+        if self._running and self._server_socket:
             try:
                 self._server_socket.close()
                 logging.info('action: close_server_socket | result: success')
-            except:
-                pass
+            except Exception as e:
+                logging.error(f'action: close_server_socket | result: fail | error: {e}')
         logging.info('action: shutdown_server | result: success')
