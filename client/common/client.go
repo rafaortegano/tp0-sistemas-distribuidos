@@ -81,12 +81,10 @@ func (c *Client) createClientSocket() error {
 func (c *Client) StartClientLoop() {
 	defer c.cleanup()
 	
-	agenciaID := c.config.AgenciaID
-	
 	filename := c.config.CSVPath
 	
 	batchID := 1
-	err := ProcessCSVStreaming(filename, agenciaID, c.config.BatchMaxAmount, func(batch *Batch, isLast bool) error {
+	err := ProcessCSVStreaming(filename, c.config.AgenciaID, c.config.BatchMaxAmount, func(batch *Batch, isLast bool) error {
 		select {
 		case <-c.shutdownChan:
 			log.Infof("action: shutdown_requested | result: success | client_id: %v", c.config.ID)
@@ -130,7 +128,7 @@ func (c *Client) StartClientLoop() {
 		}
 		
 		if batch.IsLastBatch {
-			c.queryWinners(agenciaID)
+			c.queryWinners()
 		}
 		
 		batchID++
@@ -181,11 +179,11 @@ func (c *Client) receiveResponse() (*BetResponse, error) {
 }
 
 // queryWinners queries the server for winners of this agency with retries
-func (c *Client) queryWinners(agenciaID uint8) {
+func (c *Client) queryWinners() {
 	maxRetries := 10
 	
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		if err := SendQueryWinners(c.conn, agenciaID); err != nil {
+		if err := SendQueryWinners(c.conn, c.config.AgenciaID); err != nil {
 			log.Errorf("action: query_winners | result: fail | client_id: %v | attempt: %d | error: %v", c.config.ID, attempt, err)
 			if attempt < maxRetries {
 				time.Sleep(1 * time.Second)
