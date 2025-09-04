@@ -111,9 +111,10 @@ class Server:
             self._convert_bet_request_to_utils_bet(bet_request, batch_request.agencia_id)
             for bet_request in batch_request.apuestas
         ]
-        
-        store_bets(utils_bets)
-        logging.info(f'action: {LOG_ACTION_BET_RECEIVED} | result: {LOG_RESULT_SUCCESS} | cantidad: {len(batch_request.apuestas)}')
+
+        with self._lock:
+            store_bets(utils_bets)
+            logging.info(f'action: {LOG_ACTION_BET_RECEIVED} | result: {LOG_RESULT_SUCCESS} | cantidad: {len(batch_request.apuestas)}')
         
         if batch_request.is_last_batch:
             self._handle_last_batch(batch_request.agencia_id)
