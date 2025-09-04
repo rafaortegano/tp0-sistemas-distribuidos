@@ -391,6 +391,45 @@ action: apuesta_recibida | result: success | cantidad: {X}
 
 #### Cambios de Validación
 
-Se permiten valores 0 en documento y número (no me andaban los tests). 
+Se permiten valores 0 en documento y número (no me andaban los tests).
 
+### Ejercicio 7
 
+Implementa el sistema de notificación de finalización y consulta de ganadores.
+
+#### Flujo implementado
+
+1. Cliente: Al enviar el último batch, marca `IsLastBatch=true`
+2. Servidor: Registra agencias terminadas y ejecuta sorteo cuando todas finalizan  
+3. Cliente: Inmediatamente después del último batch, consulta ganadores
+4. Servidor: Responde con lista de ganadores específicos de cada agencia
+
+#### Cambios principales
+
+Cliente:
+- `IsLastBatch` en struct `Batch` para marcar último envío
+- `queryWinners()` ejecuta consulta inmediatamente tras último batch
+
+**Servidor:**
+- Tracking de agencias terminadas con `_finished_agencies`
+- Ejecuta `load_bets()` y `has_won()`
+- `_winners_by_agency` almacena ganadores por agencia
+
+#### Protocolo
+
+- Agregado campo `IsLastBatch` (1 byte) después del agencia_id en el mensaje batch
+- Permite al servidor detectar cuando una agencia terminó de enviar apuestas
+- [4 bytes length][1 byte MSG_TYPE_BATCH][1 byte agencia_id][1 byte IsLastBatch][2 bytes count][...bets...]
+
+Nuevo tipo de mensaje:
+- `MSG_TYPE_QUERY_WINNERS = 0x02` para consultas de ganadores
+
+**Consulta ganadores:**
+```
+[4 bytes length][1 byte MSG_TYPE_QUERY_WINNERS][1 byte agencia_id]
+```
+
+**Respuesta ganadores:**
+```
+[4 bytes length][1 byte status][2 bytes count][count * 4 bytes DNIs]
+```
