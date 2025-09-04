@@ -69,9 +69,16 @@ class Server:
             
             send_bet_response(client_sock, STATUS_OK, "Apuesta registrada exitosamente")
                 
-        except OSError as e:
-            logging.error("action: handle_client | result: fail | error: {e}")
-            send_bet_response(client_sock, STATUS_ERROR, "Error al procesar apuesta")
+        except (ConnectionError, socket.error) as e:
+            logging.error(f"action: handle_client | result: fail | error: {e}")
+            
+        except ValueError as e:
+            logging.error(f"action: handle_client | result: fail | error: {e}")
+            send_bet_response(client_sock, STATUS_ERROR, "Datos de apuesta inválidos")
+                
+        except Exception as e:
+            logging.error(f"action: handle_client | result: fail | error: {e}")
+            send_bet_response(client_sock, STATUS_ERROR, "Error al procesar apuesta")  
         finally:
             client_sock.close()
 
