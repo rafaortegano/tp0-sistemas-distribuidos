@@ -240,39 +240,6 @@ def parse_batch_request(data):
     
     return BatchRequest(agencia_id, apuestas, is_last_batch)
 
-def receive_message(socket):
-    """Receive and parse a complete message from socket"""
-    try:
-       
-        length_bytes = recv_exactly(socket, 4)
-        length = bytes_to_uint32_be(length_bytes)
-        
-        payload = recv_exactly(socket, length)
-        
-        complete_message = length_bytes + payload
-        
-        return parse_bet_request(complete_message)
-            
-    except (ValueError, ConnectionError) as e:
-        logging.error(f"Error while receiving message: {e}")
-        raise
-
-def receive_batch_message(socket):
-    """Receive and parse a batch message from socket"""
-    try:
-        length_bytes = recv_exactly(socket, 4)
-        length = bytes_to_uint32_be(length_bytes)
-        
-        payload = recv_exactly(socket, length)
-        
-        complete_message = length_bytes + payload
-        
-        return parse_batch_request(complete_message)
-            
-    except (ValueError, ConnectionError) as e:
-        logging.error(f"Error while receiving batch message: {e}")
-        raise
-
 def send_bet_response(socket, status, message=""):
     """Send bet response to client"""
     response = BetResponse(status, message)
@@ -306,21 +273,6 @@ def parse_query_winners_request(data):
     
     return QueryWinnersRequest(agencia_id)
 
-def receive_query_winners_message(socket):
-    """Receive and parse a query winners message from socket"""
-    try:
-        length_bytes = recv_exactly(socket, 4)
-        length = bytes_to_uint32_be(length_bytes)
-        
-        payload = recv_exactly(socket, length)
-        
-        complete_message = length_bytes + payload
-        
-        return parse_query_winners_request(complete_message)
-            
-    except (ValueError, ConnectionError) as e:
-        logging.error(f"Error while receiving query winners message: {e}")
-        raise
 
 def send_winners_response(socket, status, winner_dnis=None):
     """Send winners response to client"""
