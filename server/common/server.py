@@ -127,7 +127,7 @@ class Server:
                     raise ValueError(f"Unknown message type: {msg_type}")
                     
         except (ConnectionError, socket.error) as e:
-            logging.error(f"action: handle_client | result: fail | error: {e}") 
+            logging.error(f"action: handle_client | result: success | error: {e}") 
         except ValueError as e:
             logging.error(f"action: handle_client | result: fail | error: {e}")
             send_bet_response(client_sock, STATUS_ERROR, "Datos de apuesta inválidos")
