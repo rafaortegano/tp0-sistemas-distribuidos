@@ -1,11 +1,16 @@
 import logging
 
+# Status codes
 STATUS_OK = 0x00
 STATUS_ERROR = 0x01
 
-
+# Message types
 MSG_TYPE_BATCH = 0x01
 MSG_TYPE_QUERY_WINNERS = 0x02
+
+# Protocol constants
+HEADER_LENGTH = 4
+STRING_LENGTH_SIZE = 1  # 1 byte to store string length (for names, surnames, etc.)
 
 def uint32_to_bytes_be(value):
     """Convert uint32 to 4 bytes big-endian"""
@@ -30,6 +35,11 @@ def bytes_to_uint32_be(data):
 def bytes_to_uint16_be(data):
     """Convert 2 bytes big-endian to uint16"""
     return (data[0] << 8) | data[1]
+
+def _validate_remaining_bytes(payload, offset, required_bytes, field_name):
+    """Validate that enough bytes remain in payload for reading a field"""
+    if offset + required_bytes > len(payload):
+        raise ValueError(f"Unexpected end of data while reading {field_name}")
 
 
 class BetRequest:
@@ -124,28 +134,26 @@ def read_string(data, offset):
         raise ValueError("Unexpected end of data while reading string length")
     
     length = data[offset]
-    if offset + 1 + length > len(data):
+    if offset + STRING_LENGTH_SIZE + length > len(data):
         raise ValueError("Unexpected end of data while reading string")
     
-    string_data = data[offset + 1:offset + 1 + length]
-    return string_data.decode('utf-8'), offset + 1 + length
+    string_data = data[offset + STRING_LENGTH_SIZE:offset + STRING_LENGTH_SIZE + length]
+    return string_data.decode('utf-8'), offset + STRING_LENGTH_SIZE + length
 
 def parse_bet_request(data):
     """Parse binary data into BetRequest object"""
-    if len(data) < 4:
+    if len(data) < HEADER_LENGTH:
         raise ValueError("Message too short")
     
-    msg_length = bytes_to_uint32_be(data[:4])
+    msg_length = bytes_to_uint32_be(data[:HEADER_LENGTH])
     
-    if len(data) != 4 + msg_length:
-        raise ValueError(f"Message length mismatch: expected {4 + msg_length}, got {len(data)}")
+    if len(data) != HEADER_LENGTH + msg_length:
+        raise ValueError(f"Message length mismatch: expected {HEADER_LENGTH + msg_length}, got {len(data)}")
     
- 
-    payload = data[4:]
+    payload = data[HEADER_LENGTH:]
     offset = 0
     
-    if offset + 1 > len(payload):
-        raise ValueError("Unexpected end of data while reading agencia_id")
+    _validate_remaining_bytes(payload, offset, 1, "agencia_id")
     agencia_id = payload[offset]
     offset += 1
     
@@ -153,22 +161,18 @@ def parse_bet_request(data):
     
     apellido, offset = read_string(payload, offset)
     
-    if offset + 4 > len(payload):
-        raise ValueError("Unexpected end of data while reading documento")
+    _validate_remaining_bytes(payload, offset, 4, "documento")
     documento = bytes_to_uint32_be(payload[offset:offset + 4])
     offset += 4
     
-    if offset + 4 > len(payload):
-        raise ValueError("Unexpected end of data while reading nacimiento")
+    _validate_remaining_bytes(payload, offset, 4, "nacimiento")
     anio = bytes_to_uint16_be(payload[offset:offset + 2])
     mes = payload[offset + 2]
     dia = payload[offset + 3]
     offset += 4
-    nacimiento = anio * 10000 + mes * 100 + dia  # Reconstruct YYYYMMDD
+    nacimiento = anio * 10000 + mes * 100 + dia  
     
-   
-    if offset + 2 > len(payload):
-        raise ValueError("Unexpected end of data while reading numero")
+    _validate_remaining_bytes(payload, offset, 2, "numero")
     numero = bytes_to_uint16_be(payload[offset:offset + 2])
     
     return BetRequest(agencia_id, nombre, apellido, documento, nacimiento, numero)

@@ -11,6 +11,17 @@ from common.protocol import (
 )
 from common.utils import store_bets, load_bets, has_won, Bet as UtilsBet
 
+# Constants for date conversion
+DATE_YEAR_DIVISOR = 10000
+DATE_MONTH_DIVISOR = 100
+DATE_DAY_MODULO = 100
+
+# Logging constants
+LOG_ACTION_BET_RECEIVED = "apuesta_recibida"
+LOG_ACTION_AGENCY_FINISHED = "agency_finished"
+LOG_ACTION_WINNERS_RESPONSE = "respuesta_ganadores"
+LOG_RESULT_SUCCESS = "success"
+
 
 class Server:
     def __init__(self, port, listen_backlog):
@@ -58,6 +69,24 @@ class Server:
         finally:
             self._cleanup()
 
+    def _convert_date_to_string(self, nacimiento):
+        """Convert YYYYMMDD integer to YYYY-MM-DD string"""
+        year = nacimiento // DATE_YEAR_DIVISOR
+        month = (nacimiento // DATE_MONTH_DIVISOR) % DATE_DAY_MODULO
+        day = nacimiento % DATE_DAY_MODULO
+        return f"{year:04d}-{month:02d}-{day:02d}"
+
+    def _convert_bet_request_to_utils_bet(self, bet_request, agencia_id):
+        """Convert BetRequest to UtilsBet"""
+        return UtilsBet(
+            agency=str(agencia_id), 
+            first_name=bet_request.nombre,
+            last_name=bet_request.apellido,
+            document=str(bet_request.documento),
+            birthdate=self._convert_date_to_string(bet_request.nacimiento),
+            number=str(bet_request.numero)
+        )
+
     def _receive_message(self, client_sock):
         """Receive and return message type and complete message"""
         length_bytes = recv_exactly(client_sock, 4)
@@ -78,24 +107,13 @@ class Server:
         """Handle batch message processing"""
         batch_request = parse_batch_request(complete_message)
         
-        utils_bets = []
-        for bet_request in batch_request.apuestas:
-            year = bet_request.nacimiento // 10000
-            month = (bet_request.nacimiento // 100) % 100  
-            day = bet_request.nacimiento % 100
-            
-            utils_bet = UtilsBet(
-                agency=str(batch_request.agencia_id), 
-                first_name=bet_request.nombre,
-                last_name=bet_request.apellido,
-                document=str(bet_request.documento),
-                birthdate=f"{year:04d}-{month:02d}-{day:02d}",
-                number=str(bet_request.numero)
-            )
-            utils_bets.append(utils_bet)
+        utils_bets = [
+            self._convert_bet_request_to_utils_bet(bet_request, batch_request.agencia_id)
+            for bet_request in batch_request.apuestas
+        ]
         
         store_bets(utils_bets)
-        logging.info(f'action: apuesta_recibida | result: success | cantidad: {len(batch_request.apuestas)}')
+        logging.info(f'action: {LOG_ACTION_BET_RECEIVED} | result: {LOG_RESULT_SUCCESS} | cantidad: {len(batch_request.apuestas)}')
         
         if batch_request.is_last_batch:
             self._handle_last_batch(batch_request.agencia_id)
@@ -106,7 +124,7 @@ class Server:
         """Handle when an agency finishes sending all batches"""
         with self._lock:
             self._finished_agencies.add(agencia_id)
-            logging.info(f'action: agency_finished | result: success | agency_id: {agencia_id} | finished_count: {len(self._finished_agencies)}')
+            logging.info(f'action: {LOG_ACTION_AGENCY_FINISHED} | result: {LOG_RESULT_SUCCESS} | agency_id: {agencia_id} | finished_count: {len(self._finished_agencies)}')
             
             if len(self._finished_agencies) == self._expected_agencies and not self._sorteo_realizado:
                 self._perform_lottery_draw()
@@ -118,11 +136,11 @@ class Server:
         with self._lock:
             if not self._sorteo_realizado:
                 send_winners_response(client_sock, STATUS_OK, [])
-                logging.info(f'action: respuesta_ganadores | result: success | agency_id: {query_request.agencia_id} | cant_ganadores: 0 | note: sorteo_pendiente')
+                logging.info(f'action: {LOG_ACTION_WINNERS_RESPONSE} | result: {LOG_RESULT_SUCCESS} | agency_id: {query_request.agencia_id} | cant_ganadores: 0 | note: sorteo_pendiente')
             else:
                 agency_winners = self._winners_by_agency.get(query_request.agencia_id, [])
                 send_winners_response(client_sock, STATUS_OK, agency_winners)
-                logging.info(f'action: respuesta_ganadores | result: success | agency_id: {query_request.agencia_id} | cant_ganadores: {len(agency_winners)}')
+                logging.info(f'action: {LOG_ACTION_WINNERS_RESPONSE} | result: {LOG_RESULT_SUCCESS} | agency_id: {query_request.agencia_id} | cant_ganadores: {len(agency_winners)}')
 
     def __handle_client_connection(self, client_sock):
         """
