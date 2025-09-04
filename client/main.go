@@ -110,6 +110,7 @@ func main() {
 		LoopAmount:    v.GetInt("loop.amount"),
 		LoopPeriod:    v.GetDuration("loop.period"),
 		BatchMaxAmount: v.GetInt("batch.maxAmount"),
+		AgenciaID:     uint8(v.GetInt("id")),
 	}
 
 	client := common.NewClient(clientConfig)

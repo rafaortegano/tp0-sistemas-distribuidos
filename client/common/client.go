@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 	"io"
@@ -33,6 +32,7 @@ type ClientConfig struct {
 	LoopAmount    int
 	LoopPeriod    time.Duration
 	BatchMaxAmount int
+	AgenciaID     uint8   
 }
 
 // Client Entity that encapsulates how
@@ -75,18 +75,7 @@ func (c *Client) createClientSocket() error {
 func (c *Client) StartClientLoop() {
 	defer c.cleanup()
 	
-	cliIDStr := os.Getenv("CLI_ID")
-	if cliIDStr == "" {
-		log.Errorf("action: read_agency_id | result: fail | client_id: %v | error: CLI_ID environment variable is required", 
-			c.config.ID)
-		return
-	}
-	agenciaID, err := strconv.ParseUint(cliIDStr, 10, 8)
-	if err != nil {
-		log.Errorf("action: parse_agency_id | result: fail | client_id: %v | error: %v", 
-			c.config.ID, err)
-		return
-	}
+	agenciaID := c.config.AgenciaID
 	
 	filename := fmt.Sprintf("/data/agency-%s.csv", c.config.ID)
 	
@@ -96,7 +85,7 @@ func (c *Client) StartClientLoop() {
 	defer c.conn.Close()
 
 	batchID := 1
-	err = ProcessCSVStreaming(filename, uint8(agenciaID), c.config.BatchMaxAmount, func(batch *Batch, isLast bool) error {
+	err := ProcessCSVStreaming(filename, agenciaID, c.config.BatchMaxAmount, func(batch *Batch, isLast bool) error {
 		select {
 		case <-c.shutdownChan:
 			log.Infof("action: shutdown_requested | result: success | client_id: %v", c.config.ID)
@@ -140,7 +129,7 @@ func (c *Client) StartClientLoop() {
 		}
 		
 		if batch.IsLastBatch {
-			c.queryWinners(uint8(agenciaID))
+			c.queryWinners(agenciaID)
 		}
 		
 		batchID++
