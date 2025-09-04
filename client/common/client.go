@@ -33,8 +33,8 @@ type ClientConfig struct {
 	LoopPeriod    time.Duration
 	BatchMaxAmount int
 	AgenciaID     uint8   
+	CSVPath       string   
 }
-
 // Client Entity that encapsulates how
 type Client struct {
 	config ClientConfig
@@ -77,7 +77,7 @@ func (c *Client) StartClientLoop() {
 	
 	agenciaID := c.config.AgenciaID
 	
-	filename := fmt.Sprintf("/data/agency-%s.csv", c.config.ID)
+	filename := c.config.CSVPath
 	
 	if err := c.createClientSocket(); err != nil {
 		return

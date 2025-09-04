@@ -38,6 +38,7 @@ func InitConfig() (*viper.Viper, error) {
 	v.BindEnv("loop", "amount")
 	v.BindEnv("log", "level")
 	v.BindEnv("batch", "maxAmount")
+	v.BindEnv("csv", "file")
 
 	// Try to read configuration from config file. If config file
 	// does not exists then ReadInConfig will fail but configuration
@@ -112,6 +113,8 @@ func main() {
 		BatchMaxAmount: v.GetInt("batch.maxAmount"),
 		AgenciaID:     uint8(v.GetInt("id")),
 	}
+
+	clientConfig.CSVPath = v.GetString("csv.file")
 
 	client := common.NewClient(clientConfig)
 	client.StartClientLoop()

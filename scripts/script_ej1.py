@@ -31,11 +31,7 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID={i}
-      - CLI_NOMBRE=Santiago Lionel
-      - CLI_APELLIDO=Lorca
-      - CLI_DOCUMENTO=30904465
-      - CLI_NACIMIENTO=1999-03-17
-      - CLI_NUMERO=7574
+      - CLI_CSV_FILE=/data/agency-{i}.csv
     networks:
       - testing_net
     depends_on:
