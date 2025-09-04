@@ -51,6 +51,11 @@ func NewClient(config ClientConfig) *Client {
 	}
 
 	client.setupSignalHandler()
+
+	if err := client.createClientSocket(); err != nil {
+		log.Errorf("action: create_client | result: fail | client_id: %v | error: %v", config.ID, err)
+		return nil
+	}
 	
 	return client
 }
@@ -66,6 +71,7 @@ func (c *Client) createClientSocket() error {
 			c.config.ID,
 			err,
 		)
+		return err
 	}
 	c.conn = conn
 	return nil
@@ -79,11 +85,6 @@ func (c *Client) StartClientLoop() {
 	
 	filename := c.config.CSVPath
 	
-	if err := c.createClientSocket(); err != nil {
-		return
-	}
-	defer c.conn.Close()
-
 	batchID := 1
 	err := ProcessCSVStreaming(filename, agenciaID, c.config.BatchMaxAmount, func(batch *Batch, isLast bool) error {
 		select {
