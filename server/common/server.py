@@ -126,12 +126,15 @@ class Server:
                 else:
                     raise ValueError(f"Unknown message type: {msg_type}")
                     
-        except OSError as e:
-            logging.error(f"action: handle_client | result: success | error: {e}")
-            try:
-                send_bet_response(client_sock, STATUS_ERROR, "Error al procesar mensaje")
-            except:
-                pass
+        except (ConnectionError, socket.error) as e:
+            logging.error(f"action: handle_client | result: fail | error: {e}") 
+        except ValueError as e:
+            logging.error(f"action: handle_client | result: fail | error: {e}")
+            send_bet_response(client_sock, STATUS_ERROR, "Datos de apuesta inválidos")
+                
+        except Exception as e:
+            logging.error(f"action: handle_client | result: fail | error: {e}")
+            send_bet_response(client_sock, STATUS_ERROR, "Error al procesar mensaje")
         finally:
             client_sock.close()
     

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+	"io"
 
 	"github.com/op/go-logging"
 )
@@ -120,8 +121,12 @@ func (c *Client) StartClientLoop() {
 		
 		response, err := c.receiveResponse()
 		if err != nil {
-			log.Errorf("action: receive_response | result: fail | client_id: %v | batch_id: %d | error: %v",
-				c.config.ID, batchID, err)
+			if err == io.EOF {
+				log.Infof("action: receive_message | result: server_shutdown | client_id: %v | batch_id: %d | msg: server closed connection", c.config.ID, batchID)
+			} else {
+				log.Errorf("action: receive_response | result: fail | client_id: %v | batch_id: %d | error: %v",
+					c.config.ID, batchID, err)
+			}
 			batchID++
 			return nil
 		}
@@ -166,9 +171,11 @@ func (c *Client) setupSignalHandler() {
 		sig := <-signalChan
 		log.Infof("action: signal_received | result: success | client_id: %v | signal: %v", c.config.ID, sig)
 		
-		select {
-		case c.shutdownChan <- true:
-		default:
+		c.shutdownChan <- true
+
+		if c.conn != nil {
+			c.conn.Close()
+			log.Infof("action: close_connection | result: success | client_id: %v", c.config.ID)
 		}
 	}()
 }
