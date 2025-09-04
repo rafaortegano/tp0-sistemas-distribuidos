@@ -122,9 +122,6 @@ func DeserializeBetResponse(data []byte) (*BetResponse, error) {
 	}
 	
 	if len(data) > 1 {
-		if len(data) < 2 {
-			return nil, fmt.Errorf("invalid message format")
-		}
 		messageLen := int(data[1])
 		if len(data) < 2+messageLen {
 			return nil, fmt.Errorf("incomplete message")
